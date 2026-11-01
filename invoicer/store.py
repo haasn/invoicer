@@ -26,6 +26,10 @@ DEFAULT_SETTINGS = {
 
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 CONFLICT_RE = re.compile(r"\.sync-conflict-|\.orig$|\.rej$")
+# Syncthing inserts the marker before the last extension.
+SYNC_CONFLICT_RE = re.compile(r"^(?P<base>.+)\.sync-conflict-\d{8}-\d{6}-[A-Z0-9]+(?P<ext>\.[^.]*)?$")
+# Fields of an issued invoice that may legitimately change after issuing.
+MUTABLE_INVOICE_FIELDS = {"status", "paid_date", "revision"}
 
 
 class StoreError(Exception):
@@ -186,6 +190,44 @@ class Store:
         return fmt.format(code=client.get("code") or client["id"].upper(),
                           year=year, seq=seq)
 
+    def _same_invoice(self, a, b):
+        """Whether two versions of an invoice file describe the same invoice."""
+        if a.suffix == ".asc":
+            return True
+        if a.suffix != ".json":
+            return a.read_bytes() == b.read_bytes()
+        try:
+            x, y = self._read(a), self._read(b)
+        except (OSError, ValueError):
+            return False
+        strip = lambda d: {k: v for k, v in d.items() if k not in MUTABLE_INVOICE_FIELDS}
+        return strip(x) == strip(y)
+
+    def resolve_conflicts(self):
+        """Resolve syncthing conflict copies; returns a note per resolution.
+
+        Syncthing keeps the newer version under the original name, so the
+        newest edit wins by deleting the copy. Copies of issued invoices are
+        kept if they differ in more than their payment status: that means the
+        same number was issued twice, which needs a human.
+        """
+        notes = []
+        for path in sorted(self.root.rglob("*.sync-conflict-*")):
+            m = SYNC_CONFLICT_RE.match(path.name)
+            if not m or not path.is_file():
+                continue
+            original = path.with_name(m["base"] + (m["ext"] or ""))
+            rel = original.relative_to(self.root)
+            if not original.exists():
+                os.replace(path, original)
+                notes.append(f"Restored {rel} from a sync conflict copy")
+                continue
+            if rel.parts[0] == "invoices" and not self._same_invoice(original, path):
+                continue
+            path.unlink()
+            notes.append(f"Sync conflict in {rel} resolved: kept the newer version")
+        return notes
+
     def problems(self):
         """Inconsistencies that can arise from syncing between machines."""
         self.load_errors = []
@@ -199,6 +241,14 @@ class Store:
                            f"({seen[key]} and {d['id']})")
             seen.setdefault(key, d["id"])
         for path in self.root.rglob("*"):
-            if ".git" not in path.parts and CONFLICT_RE.search(path.name):
-                out.append(f"Conflict file: {path.relative_to(self.root)}")
+            if ".git" in path.parts or not CONFLICT_RE.search(path.name):
+                continue
+            rel = path.relative_to(self.root)
+            m = SYNC_CONFLICT_RE.match(path.name)
+            if rel.parts[0] == "invoices" and m:
+                out.append(f"Two different versions of {rel.parent / (m['base'] + (m['ext'] or ''))} "
+                           f"exist; was the same invoice number issued on two machines? "
+                           f"The other version is {rel}")
+            else:
+                out.append(f"Conflict file: {rel}")
         return out

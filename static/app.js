@@ -105,6 +105,7 @@ function go(...parts) {
 
 async function reload() {
     S = await api("GET", "/api/state");
+    S.resolved.forEach(note => toast(note));
     render();
 }
 

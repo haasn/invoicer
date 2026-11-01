@@ -103,6 +103,8 @@ def draft_info(store, draft, clients, settings):
 @route("GET", "/api/state")
 def api_state(app, _body):
     store = app.store
+    with app.lock:
+        resolved = store.resolve_conflicts()
     settings = store.settings()
     clients = store.clients()
     drafts = []
@@ -118,6 +120,7 @@ def api_state(app, _body):
         "invoices": [annotate_invoice(store, i) for i in store.invoices()],
         "drafts": drafts,
         "problems": store.problems(),
+        "resolved": resolved,
         "git": app.git_status(),
         "meta": {
             "units": model.UNITS,
