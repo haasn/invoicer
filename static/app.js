@@ -223,7 +223,7 @@ function listView(clientId) {
         return h("tr", { onclick: () => go(...href) },
             h("td", null, isDraft ? h("span", { class: "muted" }, "—") : d.number),
             clientId ? null : h("td", null, clientName(d.client)),
-            h("td", null, d.issue_date || ""),
+            h("td", { class: "date" }, d.issue_date || ""),
             h("td", null, d.title || ""),
             h("td", { class: "num" }, money(d._.gross, d.currency)),
             h("td", null, badge(d._.status)));
