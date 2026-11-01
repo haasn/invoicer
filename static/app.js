@@ -393,7 +393,7 @@ function servicePeriodLabel(period) {
 function mailtoUrl(inv) {
     const to = ((S.clients[inv.client] || {}).emails || []).map(encodeURIComponent).join(",");
     const label = servicePeriodLabel(inv.service_period);
-    const subject = `Invoice #${inv.number}${label ? `: ${label}` : ""}`;
+    const subject = `Invoice ${inv.number}${label ? `: ${label}` : ""}`;
     return `mailto:${to}?subject=${encodeURIComponent(subject)}`;
 }
 
