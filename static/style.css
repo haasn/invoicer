@@ -17,6 +17,19 @@
     --bad-bg: #fde7e5;
     --muted-bg: #eef0f3;
     --shadow: 0 1px 2px rgba(15, 21, 42, 0.08), 0 4px 12px rgba(15, 21, 42, 0.06);
+    /* Charts: validated categorical order (dataviz reference palette) */
+    --viz-1: #2a78d6;
+    --viz-2: #eb6834;
+    --viz-3: #1baf7a;
+    --viz-4: #eda100;
+    --viz-5: #e87ba4;
+    --viz-6: #008300;
+    --viz-7: #6250d6;
+    --viz-other: #a3abb3;
+    --viz-muted: #b4c0c6;
+    --viz-grid: #e1ecee;
+    --viz-axis: #b8cdd2;
+    --viz-hover: rgba(14, 105, 144, 0.07);
     color-scheme: light;
 }
 
@@ -39,6 +52,18 @@
         --bad-bg: #3a1513;
         --muted-bg: #1a2731;
         --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+        --viz-1: #3987e5;
+        --viz-2: #d95926;
+        --viz-3: #199e70;
+        --viz-4: #c98500;
+        --viz-5: #d55181;
+        --viz-6: #008300;
+        --viz-7: #9085e9;
+        --viz-other: #56646d;
+        --viz-muted: #4b5d68;
+        --viz-grid: #15242d;
+        --viz-axis: #2a4250;
+        --viz-hover: rgba(109, 202, 224, 0.08);
         color-scheme: dark;
     }
 }
@@ -383,3 +408,57 @@ table.report.clickable tbody tr { cursor: pointer; }
 table.report tr.zero td { color: var(--text-2); }
 table.report tfoot td { padding: 8px 10px; font-weight: 600; border-top: 2px solid var(--border); }
 table.list .nowrap { white-space: nowrap; }
+
+/* Charts */
+
+figure.viz {
+    margin: 0 0 20px;
+    padding: 14px 16px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+}
+figure.viz figcaption { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+figure.viz h3 { margin: 0; font-size: 15px; font-weight: 600; }
+figure.viz .hint { margin: 2px 0 0; }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; font-size: 13px; color: var(--text-2); }
+.viz-legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+.viz-legend .key, .viz-tip .key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; margin-right: 6px; vertical-align: middle; }
+.viz-body { position: relative; margin-top: 8px; }
+.viz-plot { width: 100%; min-height: 260px; }
+.viz-svg { display: block; overflow: visible; }
+.viz-svg .grid { stroke: var(--viz-grid); stroke-width: 1; }
+.viz-svg .axis { stroke: var(--viz-axis); stroke-width: 1; }
+.viz-svg .tick { fill: var(--text-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.viz-svg .value { fill: var(--text); font-size: 11px; font-weight: 600; }
+.viz-svg .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.viz-svg .dot { stroke: var(--bg); stroke-width: 2; }
+.viz-svg .crosshair { stroke: var(--viz-axis); stroke-width: 1; pointer-events: none; }
+.viz-svg .hit { fill: transparent; outline: none; }
+.viz-svg rect.hit:not(.overlay):hover, .viz-svg rect.hit:not(.overlay):focus { fill: var(--viz-hover); }
+.viz-tip {
+    position: absolute;
+    z-index: 5;
+    min-width: 140px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    font-size: 12px;
+    pointer-events: none;
+}
+.viz-tip .tip-title { color: var(--text-2); margin-bottom: 4px; }
+.viz-tip .tip-row { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.viz-tip .tip-row.total { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); padding-left: 20px; }
+.viz-table { margin-top: 10px; }
+.stat .delta { font-size: 13px; font-weight: 500; }
+.stat .delta.up { color: var(--ok); }
+.stat .delta.down { color: var(--bad); }
+
+.ranked { display: grid; grid-template-columns: max-content 1fr max-content max-content; gap: 8px 14px; align-items: center; margin-top: 12px; }
+.ranked-row { display: contents; cursor: pointer; }
+.ranked-row.dim > * { opacity: 0.45; }
+.ranked-row:hover .name { color: var(--primary); }
+.ranked .track { height: 10px; }
+.ranked .bar { display: block; height: 10px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--primary); }

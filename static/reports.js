@@ -297,3 +297,390 @@ function downloadCsv(rows, scope) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+
+/* Income & trends */
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const SERIES_SLOTS = 7;     // categorical colors; further clients fold into "Other"
+let vizObservers = [];
+
+function svg(tag, attrs, ...children) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+        if (v == null || v === false) continue;
+        if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+        else if (k === "style") Object.entries(v).forEach(([p, val]) => el.style.setProperty(p, val));
+        else el.setAttribute(k, v);
+    }
+    for (const c of children.flat(Infinity)) {
+        if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+    }
+    return el;
+}
+
+// Colors follow the client, ranked by all-time revenue, so filters never repaint.
+function clientSeries() {
+    const totals = {};
+    for (const inv of S.invoices) {
+        if (inv.status !== "cancelled") totals[inv.client] = (totals[inv.client] || 0) + inv._.net_cents;
+    }
+    const ranked = Object.keys(totals).sort((a, b) => totals[b] - totals[a] || a.localeCompare(b));
+    const series = {};
+    ranked.forEach((id, i) => {
+        series[id] = i < SERIES_SLOTS
+            ? { id, label: clientName(id), color: `var(--viz-${i + 1})`, rank: i }
+            : { id: "_other", label: "Other", color: "var(--viz-other)", rank: SERIES_SLOTS };
+    });
+    return series;
+}
+
+const fmt0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+function compact(c) {
+    const v = c / 100;
+    if (Math.abs(v) >= 1e6) return `${+(v / 1e6).toFixed(1)}M`;
+    if (Math.abs(v) >= 1e4) return `${+(v / 1e3).toFixed(1)}K`;
+    return fmt0.format(v);
+}
+
+function niceStep(max, n) {
+    const raw = max / n;
+    const p = 10 ** Math.floor(Math.log10(raw));
+    return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => raw <= s);
+}
+
+function yScale(max, ph, top) {
+    const step = niceStep(Math.max(max, 100), 4);
+    const limit = Math.ceil(Math.max(max, 1) / step) * step;
+    return { step, limit, y: v => top + ph - (v / limit) * ph };
+}
+
+function lineKey(color) {
+    const k = h("span", { class: "key" });
+    k.style.background = color;
+    return k;
+}
+
+function showTip(tip, body, x, y) {
+    tip.replaceChildren(...body.flat(Infinity).filter(x => x != null));
+    tip.hidden = false;
+    const box = tip.parentElement.getBoundingClientRect();
+    const left = x + 14 + tip.offsetWidth > box.width ? x - 14 - tip.offsetWidth : x + 14;
+    tip.style.left = `${Math.max(0, left)}px`;
+    tip.style.top = `${Math.max(0, y - tip.offsetHeight / 2)}px`;
+}
+
+function tipRows(title, rows, total) {
+    return [h("div", { class: "tip-title" }, title),
+            rows.map(r => h("div", { class: "tip-row" }, lineKey(r.color),
+                            h("strong", null, amount(r.value)), h("span", { class: "muted" }, r.label))),
+            total != null ? h("div", { class: "tip-row total" }, h("strong", null, amount(total)),
+                              h("span", { class: "muted" }, "Total")) : null];
+}
+
+function pointerPos(evt, el) {
+    const box = el.closest(".viz-body").getBoundingClientRect();
+    if (evt.clientX == null) {
+        const r = evt.target.getBoundingClientRect();
+        return [r.left + r.width / 2 - box.left, r.top + 20 - box.top];
+    }
+    return [evt.clientX - box.left, evt.clientY - box.top];
+}
+
+function legend(series, kind = "rect") {
+    if (series.length < 2) return null;
+    return h("div", { class: "viz-legend" }, series.map(s => {
+        const key = h("span", { class: kind === "line" ? "key" : "swatch" });
+        key.style.background = s.color;
+        return h("span", null, key, s.label);
+    }));
+}
+
+// A chart card; `draw(width, tip)` is re-run whenever the plot width changes.
+function chartCard(id, title, subtitle, legendEl, draw, table) {
+    const plot = h("div", { class: "viz-plot" });
+    const tip = h("div", { class: "viz-tip", hidden: true });
+    const showTable = !!REPORT.tables[id];
+    let lastWidth = 0;
+    const ro = new ResizeObserver(() => {
+        const w = Math.floor(plot.clientWidth);
+        if (w && w !== lastWidth) {
+            lastWidth = w;
+            tip.hidden = true;
+            plot.replaceChildren(draw(w, tip));
+        }
+    });
+    ro.observe(plot);
+    vizObservers.push(ro);
+    return h("figure", { class: "viz" },
+        h("figcaption", null,
+          h("div", null, h("h3", null, title), subtitle ? h("p", { class: "hint" }, subtitle) : null),
+          h("button", { class: "small", onclick: () => { REPORT.tables[id] = !showTable; render(); } },
+            showTable ? "Hide table" : "Show table")),
+        legendEl,
+        h("div", { class: "viz-body", onpointerleave: () => { tip.hidden = true; } }, plot, tip),
+        showTable ? table() : null);
+}
+
+function roundedTop(x, y, w, hgt, r) {
+    r = Math.min(r, w / 2, hgt);
+    return `M${x},${y + hgt}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + hgt}Z`;
+}
+
+function drawColumns(w, tip, periods, series) {
+    const H = 260, m = { t: 14, r: 8, b: 30, l: 52 };
+    const pw = w - m.l - m.r, ph = H - m.t - m.b;
+    const { step, limit, y } = yScale(Math.max(0, ...periods.map(p => p.total)), ph, m.t);
+    const band = pw / periods.length;
+    const bw = Math.max(2, Math.min(24, band * 0.6));
+    const root = svg("svg", { width: w, height: H, class: "viz-svg", role: "img",
+                              "aria-label": "Net income per period; see the table view for values" });
+
+    for (let v = 0; v <= limit; v += step) {
+        root.append(svg("line", { x1: m.l, x2: w - m.r, y1: y(v), y2: y(v), class: v ? "grid" : "axis" }),
+                    svg("text", { x: m.l - 8, y: y(v) + 4, class: "tick", "text-anchor": "end" }, compact(v)));
+    }
+    const labelWidth = Math.max(...periods.map(p => p.short.length)) * 6.5 + 10;
+    const every = Math.ceil(labelWidth / band);
+    const lastWithData = periods.map(p => p.total > 0).lastIndexOf(true);
+
+    periods.forEach((p, i) => {
+        const cx = m.l + band * (i + 0.5);
+        const segs = series.filter(s => p.values[s.id] > 0);
+        let acc = 0;
+        segs.forEach((s, j) => {
+            let top = y(acc + p.values[s.id]), bottom = y(acc);
+            acc += p.values[s.id];
+            if (j > 0) bottom -= 1;                 // 2px surface gap between segments
+            if (j < segs.length - 1) top += 1;
+            if (bottom - top < 0.5) return;
+            const isTop = j === segs.length - 1;
+            root.append(svg("path", { style: { fill: s.color },
+                d: isTop ? roundedTop(cx - bw / 2, top, bw, bottom - top, 4)
+                         : `M${cx - bw / 2},${top}h${bw}V${bottom}h${-bw}Z` }));
+        });
+        if ((periods.length - 1 - i) % every === 0) {
+            root.append(svg("text", { x: cx, y: H - 10, class: "tick", "text-anchor": "middle" }, p.short));
+        }
+        if (i === lastWithData && labelWidth < w / 3) {
+            root.append(svg("text", { x: cx, y: y(p.total) - 6, class: "value", "text-anchor": "middle" },
+                            compact(p.total)));
+        }
+        const show = evt => {
+            const rows = segs.length > 1 || series.length > 1
+                ? segs.map(s => ({ color: s.color, label: s.label, value: p.values[s.id] })).reverse() : [];
+            const total = rows.length > 1 ? p.total : null;
+            const body = rows.length ? tipRows(p.label, rows, total)
+                : tipRows(p.label, [{ color: series[0].color, label: series[0].label, value: p.total }]);
+            showTip(tip, body, ...pointerPos(evt, root));
+        };
+        root.append(svg("rect", { x: m.l + band * i, y: m.t, width: band, height: ph, class: "hit",
+                                  tabindex: 0, "aria-label": `${p.label}: ${amount(p.total)}`,
+                                  onpointermove: show, onfocus: show, onblur: () => { tip.hidden = true; } }));
+    });
+    return root;
+}
+
+function drawCumulative(w, tip, years) {
+    const H = 260, m = { t: 14, r: 52, b: 30, l: 52 };
+    const pw = w - m.l - m.r, ph = H - m.t - m.b;
+    const max = Math.max(0, ...years.flatMap(s => s.values.filter(v => v != null)));
+    const { step, limit, y } = yScale(max, ph, m.t);
+    const x = i => m.l + pw * i / 11;
+    const root = svg("svg", { width: w, height: H, class: "viz-svg", role: "img",
+                              "aria-label": "Cumulative net income per year; see the table view for values" });
+
+    for (let v = 0; v <= limit; v += step) {
+        root.append(svg("line", { x1: m.l, x2: w - m.r, y1: y(v), y2: y(v), class: v ? "grid" : "axis" }),
+                    svg("text", { x: m.l - 8, y: y(v) + 4, class: "tick", "text-anchor": "end" }, compact(v)));
+    }
+    const monthEvery = pw / 12 < 30 ? 3 : 1;
+    MONTHS.forEach((name, i) => {
+        if (i % monthEvery === 0) {
+            root.append(svg("text", { x: x(i), y: H - 10, class: "tick", "text-anchor": "middle" }, name));
+        }
+    });
+
+    // Context years first, the highlighted year on top.
+    const ordered = [...years].sort((a, b) => a.emphasis - b.emphasis);
+    const ends = [];
+    for (const s of ordered) {
+        const pts = s.values.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
+        if (!pts.length) continue;
+        root.append(svg("path", { class: "line", style: { stroke: s.color },
+                                  d: "M" + pts.map(p => p.join(",")).join("L") }));
+        const [ex, ey] = pts[pts.length - 1];
+        if (s.emphasis) root.append(svg("circle", { cx: ex, cy: ey, r: 4, class: "dot", style: { fill: s.color } }));
+        ends.push({ x: ex, y: ey, label: s.label, emphasis: s.emphasis });
+    }
+    // Direct end labels, skipping any that would collide (the legend carries those).
+    ends.sort((a, b) => b.emphasis - a.emphasis);
+    const placed = [];
+    for (const e of ends) {
+        if (placed.some(p => Math.abs(p.y - e.y) < 13 && Math.abs(p.x - e.x) < 40)) continue;
+        placed.push(e);
+        root.append(svg("text", { x: e.x + 8, y: e.y + 4, class: e.emphasis ? "value" : "tick" }, e.label));
+    }
+
+    const cross = svg("line", { y1: m.t, y2: m.t + ph, class: "crosshair", visibility: "hidden" });
+    root.append(cross);
+    let current = null;
+    const showAt = (i, evt) => {
+        current = i;
+        cross.setAttribute("x1", x(i));
+        cross.setAttribute("x2", x(i));
+        cross.setAttribute("visibility", "visible");
+        const rows = years.filter(s => s.values[i] != null)
+            .sort((a, b) => b.values[i] - a.values[i])
+            .map(s => ({ color: s.color, label: s.label, value: s.values[i] }));
+        const pos = evt && evt.clientX != null ? pointerPos(evt, root) : [x(i), m.t + 20];
+        showTip(tip, tipRows(`Through ${MONTHS[i]}`, rows), ...pos);
+    };
+    const hide = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
+    root.append(svg("rect", {
+        x: m.l - 10, y: m.t, width: pw + 20, height: ph, class: "hit overlay", tabindex: 0,
+        "aria-label": "Cumulative income by month; use the arrow keys",
+        onpointermove: evt => {
+            const box = root.getBoundingClientRect();
+            showAt(Math.max(0, Math.min(11, Math.round((evt.clientX - box.left - m.l) / pw * 11))), evt);
+        },
+        onpointerleave: hide, onblur: hide,
+        onfocus: () => showAt(current ?? Number(S.today.slice(5, 7)) - 1),
+        onkeydown: evt => {
+            const d = { ArrowLeft: -1, ArrowRight: 1 }[evt.key];
+            if (d) { evt.preventDefault(); showAt(Math.max(0, Math.min(11, (current ?? 0) + d))); }
+        },
+    }));
+    return root;
+}
+
+function statTile(label, value, sub, delta) {
+    return h("div", { class: "stat" },
+        h("div", { class: "label" }, label),
+        h("div", { class: "value" }, value),
+        delta ? h("div", { class: `delta ${delta.up ? "up" : "down"}` }, delta.up ? "▲ " : "▼ ", delta.text) : null,
+        sub ? h("div", { class: "label" }, sub) : null);
+}
+
+function monthsBetween(from, to) {
+    return (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12
+        + Number(to.slice(5, 7)) - Number(from.slice(5, 7)) + 1;
+}
+
+// Income in the same window of the previous year, for the comparison tile.
+function yearComparison(rowsAllYears) {
+    const year = REPORT.year === "all" ? S.today.slice(0, 4) : REPORT.year;
+    const prev = String(Number(year) - 1);
+    const cutoff = year === S.today.slice(0, 4) ? S.today.slice(5) : "12-31";
+    const sum = y => rowsAllYears.filter(r => r.date.startsWith(y) && r.date.slice(5) <= cutoff)
+        .reduce((a, r) => a + r.inv._.net_cents, 0);
+    const cur = sum(year), before = sum(prev);
+    const window = cutoff === "12-31" ? year : `${year} to date`;
+    if (!before) return statTile(`Net income ${window}`, cents(cur), `No income in ${prev} to compare`);
+    const pct = (cur - before) / before * 100;
+    return statTile(`Net income ${window}`, cents(cur), `vs ${cents(before)} in the same period of ${prev}`,
+                    { up: pct >= 0, text: `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% vs ${prev}` });
+}
+
+function incomeView() {
+    vizObservers.forEach(o => o.disconnect());
+    vizObservers = [];
+    const slice = reportSlice({ withClient: true });
+    const { rows, currency } = slice;
+    const split = REPORT.split && !REPORT.client;
+    const clientInfo = clientSeries();
+
+    // Same filters except the year, for the comparisons across years.
+    const allYears = reportRows().filter(r => (r.inv.currency || "EUR") === currency
+        && (!REPORT.client || r.inv.client === REPORT.client));
+
+    const total = rows.reduce((a, r) => a + r.inv._.net_cents, 0);
+    const months = monthsBetween(slice.from, slice.to);
+    const scope = REPORT.year === "all" ? "all years" : REPORT.year;
+    const tiles = h("div", { class: "stats" },
+        statTile(`Net income, ${scope}`, cents(total, currency), `${rows.length} invoice(s)`),
+        statTile("Monthly average", cents(Math.round(total / months), currency),
+                 `over ${months} month${months === 1 ? "" : "s"}`),
+        yearComparison(allYears));
+
+    // Column chart: net income per period, optionally stacked by client.
+    const keys = periodRange(REPORT.gran, slice.from, slice.to);
+    const periods = keys.map(k => ({ key: k, label: periodLabel(k), short: periodLabel(k, true), values: {}, total: 0 }));
+    const byKey = Object.fromEntries(periods.map(p => [p.key, p]));
+    const used = new Map();
+    const single = { id: "_all", label: REPORT.client ? clientName(REPORT.client) : "Net income",
+                     color: "var(--primary)", rank: 0 };
+    for (const r of rows) {
+        const p = byKey[periodKey(r.date, REPORT.gran)];
+        if (!p) continue;
+        const s = split ? clientInfo[r.inv.client] : single;
+        used.set(s.id, s);
+        p.values[s.id] = (p.values[s.id] || 0) + r.inv._.net_cents;
+        p.total += r.inv._.net_cents;
+    }
+    const series = [...used.values()].sort((a, b) => a.rank - b.rank);
+    if (!series.length) series.push(single);
+
+    const columns = chartCard("columns", `Net income per ${GRANS[REPORT.gran].toLowerCase()}`,
+        split ? "Stacked by client, largest client at the bottom." : null,
+        legend(series),
+        (w, tip) => drawColumns(w, tip, periods, series),
+        () => moneyTable([[GRANS[REPORT.gran]], ...(series.length > 1 ? series.map(s => [s.label, true]) : []),
+                          [`Net (${currency})`, true]],
+            periods.map(p => h("tr", { class: p.total ? null : "zero" }, h("td", null, p.label),
+                series.length > 1 ? series.map(s => h("td", { class: "num" }, amount(p.values[s.id] || 0))) : null,
+                h("td", { class: "num" }, amount(p.total)))),
+            null, "viz-table"));
+
+    // Cumulative income through the year, one line per year.
+    const highlight = REPORT.year === "all" ? S.today.slice(0, 4) : REPORT.year;
+    const yearList = reportYears(allYears).slice(0, 6).reverse();
+    const yearSeries = yearList.map(year => {
+        const monthly = Array(12).fill(0);
+        allYears.filter(r => r.date.startsWith(year))
+            .forEach(r => { monthly[Number(r.date.slice(5, 7)) - 1] += r.inv._.net_cents; });
+        let acc = 0;
+        const lastMonth = year === S.today.slice(0, 4) ? Number(S.today.slice(5, 7)) - 1 : 11;
+        const values = monthly.map((v, i) => (acc += v, i <= lastMonth ? acc : null));
+        const emphasis = year === highlight;
+        return { label: year, values, emphasis, color: emphasis ? "var(--primary)" : "var(--viz-muted)" };
+    });
+    const cumulative = chartCard("cumulative", "Cumulative net income by year",
+        `${highlight} highlighted, earlier years for comparison.`,
+        legend([...yearSeries].reverse(), "line"),
+        (w, tip) => drawCumulative(w, tip, yearSeries),
+        () => moneyTable([["Through"], ...yearSeries.map(s => [s.label, true])],
+            MONTHS.map((name, i) => h("tr", null, h("td", null, name),
+                yearSeries.map(s => h("td", { class: "num" }, s.values[i] == null ? "—" : amount(s.values[i]))))),
+            null, "viz-table"));
+
+    // Share per client in the selected slice (ignores the client filter).
+    const shareRows = reportSlice().rows;
+    const shareTotal = shareRows.reduce((a, r) => a + r.inv._.net_cents, 0);
+    const perClient = {};
+    shareRows.forEach(r => { perClient[r.inv.client] = (perClient[r.inv.client] || 0) + r.inv._.net_cents; });
+    const ranked = Object.entries(perClient).sort((a, b) => b[1] - a[1]);
+    const maxShare = ranked.length ? ranked[0][1] : 1;
+    const shares = h("figure", { class: "viz" },
+        h("figcaption", null, h("div", null, h("h3", null, `Net income by client, ${scope}`))),
+        ranked.length ? h("div", { class: "ranked" }, ranked.map(([id, c]) => {
+            const bar = h("span", { class: "bar" });
+            bar.style.width = `${(c / maxShare) * 100}%`;
+            return h("div", { class: `ranked-row ${REPORT.client && REPORT.client !== id ? "dim" : ""}`,
+                              onclick: () => go("client", id) },
+                h("span", { class: "name" }, clientName(id)),
+                h("span", { class: "track" }, bar),
+                h("span", { class: "num" }, amount(c)),
+                h("span", { class: "num muted" }, `${(c / shareTotal * 100).toFixed(1)}%`));
+        })) : h("div", { class: "empty" }, "No income in this selection."));
+
+    return [
+        h("div", { class: "page-head" }, h("h1", null, "Income & trends"), h("span", { class: "sub" }, scope)),
+        reportFilters({ clients: true, split: true }),
+        basisNotes(slice),
+        tiles,
+        columns,
+        cumulative,
+        shares,
+    ];
+}
