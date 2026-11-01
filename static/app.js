@@ -292,6 +292,7 @@ function invoiceView(id) {
         fact("Net", money(inv._.net, inv.currency)),
         fact(`VAT ${inv.tax ? inv.tax.rate : 0}%`, money(inv._.vat, inv.currency)),
         fact("Total", h("strong", null, money(inv._.gross, inv.currency))),
+        inv._.signed ? fact("Signature", `${inv.id}.pdf.asc`) : null,
         inv.legacy ? fact("Imported from", `${inv.legacy.branch} @ ${inv.legacy.commit.slice(0, 10)}`) : null);
 
     const left = h("div", null, head, facts,
@@ -319,6 +320,8 @@ function invoiceActions(inv) {
         out.push(h("button", { onclick: () => invoiceAction(inv, "status", { status: "open" }) }, "Reopen"));
     }
     out.push(h("a", { class: "btn", href: pdfUrl(inv.id).replace(/#.*/, ""), target: "_blank" }, "Open PDF"));
+    out.push(h("button", { onclick: () => invoiceAction(inv, "sign").then(r => r && toast("Signed")) },
+               inv._.signed ? "Re-sign (GPG)" : "Sign (GPG)"));
     out.push(h("button", { onclick: () => invoiceAction(inv, "reveal") }, "Show folder"));
     if (inv.email_body) {
         out.push(h("button", { onclick: () => navigator.clipboard.writeText(inv.email_body)
@@ -717,6 +720,7 @@ function settingsForm() {
             ["number_format", "Number format", "text",
              { hint: "Placeholders: {code}, {year}, {seq:03}" }],
             ["due_days", "Default payment term (days)", "number"],
+            ["gpg_key", "GPG key for signing", "text", { placeholder: "default key" }],
             ["auto_commit", "Commit every change to git (if the data directory is a git repository)", "check"],
         ])),
         h("div", { class: "actions" }, h("button", { class: "primary", onclick: save }, "Save")));

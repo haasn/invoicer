@@ -6,6 +6,7 @@ description of the change (used as commit message).
 
 import datetime as dt
 import re
+import subprocess
 
 from . import model, render
 from .store import StoreError, check_id
@@ -85,3 +86,24 @@ def unlock(store, inv_id):
         path.unlink(missing_ok=True)
         paths.append(path)
     return draft, paths, f"Unlock {inv['number']} for editing"
+
+
+def sign(store, inv_id):
+    """Create a detached ASCII-armored GPG signature next to the PDF."""
+    inv = store.invoice(inv_id)
+    pdf = store.invoice_path(inv, ".pdf")
+    asc = store.invoice_path(inv, ".pdf.asc")
+    if not pdf.exists():
+        raise ActionError("This invoice has no archived PDF")
+    cmd = ["gpg", "--yes", "--armor", "--detach-sign", "--output", str(asc)]
+    key = store.settings().get("gpg_key")
+    if key:
+        cmd += ["--local-user", key]
+    try:
+        res = subprocess.run(cmd + [str(pdf)], capture_output=True, text=True,
+                             stdin=subprocess.DEVNULL, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ActionError(f"Signing failed: {e}") from None
+    if res.returncode != 0:
+        raise ActionError(f"Signing failed: {res.stderr.strip()}")
+    return inv, [asc], f"Sign {inv['number']}"

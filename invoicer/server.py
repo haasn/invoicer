@@ -70,6 +70,12 @@ def annotate(doc, composed=None):
     return doc
 
 
+def annotate_invoice(store, inv):
+    annotate(inv)
+    inv["_"]["signed"] = store.invoice_path(inv, ".pdf.asc").exists()
+    return inv
+
+
 def compose_draft(store, draft, clients=None, settings=None):
     clients = clients if clients is not None else store.clients()
     client = clients.get(draft.get("client"))
@@ -107,7 +113,7 @@ def api_state(app, _body):
         "today": dt.date.today().isoformat(),
         "settings": settings,
         "clients": clients,
-        "invoices": [annotate(i) for i in store.invoices()],
+        "invoices": [annotate_invoice(store, i) for i in store.invoices()],
         "drafts": drafts,
         "problems": store.problems(),
         "git": app.git_status(),
@@ -238,6 +244,11 @@ def api_unlock(app, _body, inv_id):
     return run_action(app, actions.unlock, inv_id)
 
 
+@route("POST", r"/api/invoices/([^/]+)/sign")
+def api_sign(app, _body, inv_id):
+    return run_action(app, actions.sign, inv_id)
+
+
 @route("POST", r"/api/invoices/([^/]+)/reveal")
 def api_reveal(app, _body, inv_id):
     path = app.store.invoice_path(app.store.invoice(inv_id), ".pdf")
@@ -253,7 +264,7 @@ CLIENT_FIELDS = {
     "buyer_reference": str, "archived": bool,
 }
 SENDER_FIELDS = {k: list if k == "address" else str for k in model.SENDER_FIELDS}
-SETTINGS_FIELDS = {"tagline": str, "number_format": str, "due_days": int}
+SETTINGS_FIELDS = {"tagline": str, "number_format": str, "due_days": int, "gpg_key": str}
 
 
 def update_fields(existing, body, spec):
