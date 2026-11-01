@@ -71,7 +71,7 @@ def set_status(store, inv_id, status, paid_date=None):
     inv = _ordered(inv, INVOICE_KEYS)
     path = store.save_invoice(inv)
     verb = {"open": "Mark {} unpaid", "paid": "Mark {} paid", "cancelled": "Cancel {}"}[status]
-    return inv, [path], verb.format(inv["number"])
+    return inv, [path], verb.format(inv["id"])
 
 
 def unlock(store, inv_id):
@@ -85,7 +85,7 @@ def unlock(store, inv_id):
         path = store.invoice_path(inv, suffix)
         path.unlink(missing_ok=True)
         paths.append(path)
-    return draft, paths, f"Unlock {inv['number']} for editing"
+    return draft, paths, f"Unlock {inv['id']} for editing"
 
 
 def sign(store, inv_id):
@@ -106,4 +106,4 @@ def sign(store, inv_id):
         raise ActionError(f"Signing failed: {e}") from None
     if res.returncode != 0:
         raise ActionError(f"Signing failed: {res.stderr.strip()}")
-    return inv, [asc], f"Sign {inv['number']}"
+    return inv, [asc], f"Sign {inv['id']}"
