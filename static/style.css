@@ -463,3 +463,4 @@ figure.viz .hint { margin: 2px 0 0; }
 .ranked .track { height: 10px; }
 .ranked .bar { display: block; height: 10px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--primary); }
 table.report tr.subtotal td { font-weight: 600; border-bottom: 2px solid var(--border); cursor: default; }
+td.flag { font-size: 18px; line-height: 1; }

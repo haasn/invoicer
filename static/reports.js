@@ -265,13 +265,16 @@ function euSection(rows, currency) {
     const body = [];
     for (const [q, lines] of quarters) {
         const sorted = [...lines.values()].sort((a, b) => clientName(a.client).localeCompare(clientName(b.client)));
-        sorted.forEach((l, i) => body.push(h("tr", { onclick: () => go("client", l.client) },
-            h("td", { class: i ? "muted" : null }, periodLabel(q)),
-            h("td", null, clientName(l.client)),
-            h("td", null, l.vatId.slice(0, 2)),
-            h("td", { class: "nowrap" }, l.vatId.slice(2)),
-            h("td", { class: "num" }, l.count),
-            h("td", { class: "num" }, amount(l.net)))));
+        sorted.forEach((l, i) => {
+            const cc = l.vatId.slice(0, 2);     // the VAT ID prefix, e.g. EL for Greece
+            body.push(h("tr", { onclick: () => go("client", l.client) },
+                h("td", { class: i ? "muted" : null }, periodLabel(q)),
+                h("td", null, clientName(l.client)),
+                h("td", { class: "flag", title: `${cc}: ${countryName({ EL: "GR" }[cc] || cc)}` }, flag(cc)),
+                h("td", { class: "nowrap" }, l.vatId.slice(2)),
+                h("td", { class: "num" }, l.count),
+                h("td", { class: "num" }, amount(l.net))));
+        });
         const total = sorted.reduce((a, l) => a + l.net, 0);
         body.push(h("tr", { class: "subtotal" },
             h("td", { colspan: 5 }, `${periodLabel(q)} total (USt-VA Kennzahl 21)`),
