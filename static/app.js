@@ -415,7 +415,7 @@ function invoiceActions(inv) {
         out.push(h("button", { onclick: () => invoiceAction(inv, "status", { status: "open" }) }, "Reopen"));
     }
     out.push(h("a", { class: "btn", href: pdfUrl(inv.id).replace(/#.*/, ""), target: "_blank" }, "Open PDF"));
-    out.push(h("a", { class: "btn", href: mailtoUrl(inv) }, "Write email"));
+    out.push(h("a", { class: "btn", href: mailtoUrl(inv), target: "_blank" }, "Write email"));
     out.push(h("button", { onclick: () => invoiceAction(inv, "sign").then(r => r && toast("Signed")) },
                inv._.signed ? "Re-sign (GPG)" : "Sign (GPG)"));
     out.push(h("button", { onclick: () => invoiceAction(inv, "reveal") }, "Show folder"));
