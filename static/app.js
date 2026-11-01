@@ -273,9 +273,47 @@ function invoiceView(id) {
 }
 
 function invoiceActions(inv) {
-    return [
-        h("button", { onclick: () => newDraft(inv.client, inv.id) }, "Duplicate as draft"),
-    ];
+    const st = inv._.status;
+    const out = [];
+    if (st === "open" || st === "overdue") {
+        out.push(h("button", { class: "primary", onclick: () => {
+            const date = prompt("Paid on (YYYY-MM-DD):", S.today);
+            if (date) invoiceAction(inv, "status", { status: "paid", paid_date: date });
+        } }, "Mark paid…"));
+        out.push(h("button", { onclick: () => {
+            if (confirm(`Mark ${inv.number} as cancelled?`)) invoiceAction(inv, "status", { status: "cancelled" });
+        } }, "Cancel invoice"));
+    } else if (st === "paid") {
+        out.push(h("button", { onclick: () => invoiceAction(inv, "status", { status: "open" }) }, "Mark unpaid"));
+    } else if (st === "cancelled") {
+        out.push(h("button", { onclick: () => invoiceAction(inv, "status", { status: "open" }) }, "Reopen"));
+    }
+    out.push(h("a", { class: "btn", href: pdfUrl(inv.id).replace(/#.*/, ""), target: "_blank" }, "Open PDF"));
+    out.push(h("button", { onclick: () => invoiceAction(inv, "reveal") }, "Show folder"));
+    if (inv.email_body) {
+        out.push(h("button", { onclick: () => navigator.clipboard.writeText(inv.email_body)
+            .then(() => toast("Email text copied"), showError) }, "Copy email text"));
+    }
+    out.push(h("button", { onclick: () => newDraft(inv.client, inv.id) }, "Duplicate as draft"));
+    out.push(h("button", { class: "danger", onclick: async () => {
+        const msg = inv.legacy
+            ? `Unlock ${inv.number}? This was imported from LaTeX; re-issuing renders it with the new template.`
+            : `Unlock ${inv.number} for editing? Its PDF is removed until you issue it again (with the same number).`;
+        if (!confirm(msg)) return;
+        const draft = await invoiceAction(inv, "unlock");
+        if (draft) go("draft", draft.id);
+    } }, "Unlock for editing"));
+    return out;
+}
+
+async function invoiceAction(inv, action, body = {}) {
+    try {
+        const res = await api("POST", `/api/invoices/${encodeURIComponent(inv.id)}/${action}`, body);
+        await reload();
+        return res;
+    } catch (e) {
+        showError(e);
+    }
 }
 
 function fact(label, value) {
@@ -473,8 +511,31 @@ function updateEdInfo(saved) {
     ed.issueBtn.replaceChildren(...issueButton(saved));
 }
 
-function issueButton(_saved) {
-    return [];
+function issueButton(saved) {
+    const problems = saved._.problems || [];
+    return [h("button", { class: "primary", disabled: problems.length > 0, onclick: () => issueDraft(ed) },
+              `Issue as ${saved._.next_number}`)];
+}
+
+async function issueDraft(e) {
+    try {
+        await flush(e);
+        const saved = e.saved;
+        if (saved._.problems.length) return;
+        const client = clientName(e.draft.client);
+        const cur = (S.clients[e.draft.client] || {}).currency || "EUR";
+        let msg = `Issue invoice ${saved._.next_number} to ${client} over ${money(saved._.gross, cur)}?`;
+        if (e.draft.issue_date !== S.today) msg += `\n\nNote: the invoice date is ${e.draft.issue_date}, not today.`;
+        if (!confirm(msg)) return;
+        e.dirty = false;
+        const inv = await api("POST", `/api/drafts/${encodeURIComponent(e.id)}/issue`);
+        ed = null;
+        await reload();
+        go("invoice", inv.id);
+        toast(`Issued ${inv.number}`);
+    } catch (err) {
+        showError(err);
+    }
 }
 
 async function flush(e) {

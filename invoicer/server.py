@@ -10,12 +10,13 @@ import datetime as dt
 import json
 import re
 import secrets
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import model, render
+from . import actions, model, render
 from .store import StoreError
 
 BASE = Path(__file__).resolve().parent.parent
@@ -191,6 +192,38 @@ def api_preview(app, body):
         draft["number"] = str(body["number"])
     inv = compose_draft(app.store, draft)
     return Pdf(render.render_bytes(inv, app.store.settings()))
+
+
+def run_action(app, fn, *args):
+    with app.lock:
+        try:
+            doc, _paths, _message = fn(app.store, *args)
+        except actions.ActionError as e:
+            raise ApiError(422, str(e), e.problems) from None
+    return annotate(doc)
+
+
+@route("POST", r"/api/drafts/([^/]+)/issue")
+def api_issue(app, _body, draft_id):
+    return run_action(app, actions.issue, draft_id)
+
+
+@route("POST", r"/api/invoices/([^/]+)/status")
+def api_status(app, body, inv_id):
+    return run_action(app, actions.set_status, inv_id, body.get("status"), body.get("paid_date"))
+
+
+@route("POST", r"/api/invoices/([^/]+)/unlock")
+def api_unlock(app, _body, inv_id):
+    return run_action(app, actions.unlock, inv_id)
+
+
+@route("POST", r"/api/invoices/([^/]+)/reveal")
+def api_reveal(app, _body, inv_id):
+    path = app.store.invoice_path(app.store.invoice(inv_id), ".pdf")
+    subprocess.Popen(["xdg-open", str(path.parent)], stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    return {}
 
 
 class Handler(BaseHTTPRequestHandler):
