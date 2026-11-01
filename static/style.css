@@ -353,3 +353,19 @@ table.items .row-actions { width: 112px; white-space: nowrap; }
 
 .git { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .git-error { color: var(--bad); white-space: pre-wrap; }
+
+/* Dialogs */
+
+dialog.modal {
+    min-width: 320px;
+    padding: 20px 24px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: var(--shadow);
+}
+dialog.modal::backdrop { background: rgba(15, 21, 42, 0.35); }
+dialog.modal h3 { margin: 0 0 14px; font-size: 16px; font-weight: 600; }
+dialog.modal .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+dialog.modal .actions { justify-content: flex-end; }

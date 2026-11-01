@@ -307,8 +307,9 @@ function invoiceActions(inv) {
     const st = inv._.status;
     const out = [];
     if (st === "open" || st === "overdue") {
-        out.push(h("button", { class: "primary", onclick: () => {
-            const date = prompt("Paid on (YYYY-MM-DD):", S.today);
+        out.push(h("button", { class: "primary", onclick: async () => {
+            const date = await askDate(`Mark ${inv.number} as paid`, "Payment received on", "Mark paid",
+                                       [["Today", S.today], ["Due date", inv.due_date]]);
             if (date) invoiceAction(inv, "status", { status: "paid", paid_date: date });
         } }, "Mark paid…"));
         out.push(h("button", { onclick: () => {
@@ -347,6 +348,30 @@ async function invoiceAction(inv, action, body = {}) {
     } catch (e) {
         showError(e);
     }
+}
+
+// Modal date picker; resolves to an ISO date, or null if cancelled.
+function askDate(title, label, confirmLabel, presets = []) {
+    return new Promise(resolve => {
+        const input = h("input", { type: "date", value: presets.length ? presets[0][1] : S.today, required: true });
+        const dlg = h("dialog", { class: "modal" },
+            h("form", { method: "dialog" },
+                h("h3", null, title),
+                h("label", { class: "field" }, h("span", null, label), input),
+                presets.length ? h("div", { class: "presets" }, presets.filter(([, v]) => v).map(([name, v]) =>
+                    h("button", { type: "button", class: "small", onclick: () => { input.value = v; } },
+                      `${name} (${v})`))) : null,
+                h("div", { class: "actions" },
+                    h("button", { value: "cancel", formnovalidate: true }, "Cancel"),
+                    h("button", { class: "primary", value: "ok" }, confirmLabel))));
+        dlg.addEventListener("close", () => {
+            resolve(dlg.returnValue === "ok" && input.value ? input.value : null);
+            dlg.remove();
+        });
+        document.body.append(dlg);
+        dlg.showModal();
+        input.focus();
+    });
 }
 
 function fact(label, value) {
