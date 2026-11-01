@@ -841,6 +841,8 @@ function clientForm(id) {
         ["country", "Country", "country"],
         ["address", "Address (one line per row, include the country if abroad)", "lines", { wide: true }],
         ["vat_id", "VAT ID", "text"],
+        ["emails", "Send invoices to (one email address per line)", "lines", { wide: true,
+            placeholder: "Jane Doe <jane@example.com>" }],
         ["buyer_reference", "Buyer reference / Leitweg-ID", "text", { hint: "Only needed for e-invoicing" }],
         ["tax_scheme", "Tax treatment", "select", { options: schemes, default: "eu_reverse_charge", wide: true }],
         ["tax_note", "Tax notice on invoice", "area", { wide: true, rows: 2, placeholder: noteHint(),

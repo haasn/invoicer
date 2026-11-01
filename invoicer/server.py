@@ -276,7 +276,7 @@ CLIENT_FIELDS = {
     "name": str, "short_name": str, "code": str, "address": list, "country": str,
     "vat_id": str, "tax_scheme": str, "tax_note": str, "due_days": int, "currency": str,
     "title": str, "sender_email": str, "rate": str, "rate_unit": str,
-    "buyer_reference": str, "archived": bool,
+    "buyer_reference": str, "emails": list, "archived": bool,
 }
 SENDER_FIELDS = {k: list if k == "address" else str for k in model.SENDER_FIELDS}
 SETTINGS_FIELDS = {"tagline": str, "number_format": str, "due_days": int, "gpg_key": str}
