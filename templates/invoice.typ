@@ -154,6 +154,5 @@
 #v(2mm)
 Please transfer #d.currency #d.gross by *#d.due_date* to the account below,
 quoting invoice number #d.number.
-#if s.iban != "" [ \ IBAN #s.iban#if s.bic != "" [ · BIC #s.bic]]
 
 #paras(d.outro)
