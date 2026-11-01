@@ -287,3 +287,54 @@ pre.email {
     white-space: pre-wrap;
 }
 .toast.error { background: var(--bad); color: #fff; }
+
+/* Draft editor */
+
+.editor .form { min-width: 0; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-bottom: 10px; }
+.field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.grid .field { margin-bottom: 0; }
+.field.wide { grid-column: 1 / -1; }
+.field > span { font-size: 12px; font-weight: 500; color: var(--text-2); }
+
+input, select, textarea {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    min-width: 0;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+textarea { resize: vertical; }
+
+.period { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.editor { grid-template-columns: minmax(560px, 1.15fr) minmax(400px, 1fr); }
+table.items { width: 100%; border-collapse: collapse; margin: 6px 0; table-layout: fixed; }
+table.items th {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-2);
+    text-align: left;
+    padding: 4px;
+}
+table.items th.num { text-align: right; }
+table.items td { padding: 3px 4px; }
+table.items input, table.items select { width: 100%; }
+table.items .qty { width: 64px; }
+table.items .unit { width: 84px; }
+table.items .price { width: 100px; }
+table.items .qty input, table.items .price input { text-align: right; }
+table.items .amount { width: 92px; padding-right: 8px; }
+table.items .row-actions { width: 112px; white-space: nowrap; }
+
+.items-foot { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.ed-totals {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 20px;
+    padding-right: 120px;
+}
+.ed-status { font-size: 13px; }

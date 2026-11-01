@@ -125,6 +125,74 @@ def api_invoice_pdf(app, _body, inv_id):
     return Pdf(path.read_bytes())
 
 
+def clean_draft(body, existing=None):
+    """Build a draft from user input, keeping only the editable fields."""
+    if not isinstance(body, dict):
+        raise ApiError(400, "expected a JSON object")
+    existing = existing or {}
+    draft = {"client": str(body.get("client", "")), "status": "draft"}
+    for k in ("number", "seq"):
+        if k in existing:
+            draft[k] = existing[k]
+    for k in ("issue_date", "due_date", "title", "intro", "outro", "email_body"):
+        draft[k] = str(body.get(k) or "")
+    period = body.get("service_period") or {}
+    draft["service_period"] = {"from": str(period.get("from") or ""),
+                               "to": str(period.get("to") or "")}
+    draft["items"] = [
+        {"desc": str(i.get("desc", "")), "qty": str(i.get("qty", "1")),
+         "unit": str(i.get("unit", "C62")), "price": str(i.get("price", "0"))}
+        for i in body.get("items") or [] if isinstance(i, dict)
+    ]
+    return draft
+
+
+@route("POST", "/api/drafts")
+def api_new_draft(app, body):
+    store = app.store
+    client = store.client(body.get("client", ""))
+    if body.get("from"):
+        try:
+            template = store.invoice(body["from"])
+        except StoreError:
+            template = store.draft(body["from"])
+    else:
+        prev = [i for i in store.invoices()
+                if i.get("client") == client["id"] and i.get("status") != "cancelled"]
+        template = prev[0] if prev else None
+    draft = model.new_draft(client, store.settings(), dt.date.today(), template)
+    with app.lock:
+        store.save_draft(draft)
+    return draft_info(store, draft, store.clients(), store.settings())
+
+
+@route("PUT", r"/api/drafts/([^/]+)")
+def api_save_draft(app, body, draft_id):
+    store = app.store
+    with app.lock:
+        draft = clean_draft(body, store.draft(draft_id))
+        draft["id"] = draft_id
+        compose_draft(store, draft)
+        store.save_draft(draft)
+    return draft_info(store, draft, store.clients(), store.settings())
+
+
+@route("DELETE", r"/api/drafts/([^/]+)")
+def api_delete_draft(app, _body, draft_id):
+    with app.lock:
+        app.store.delete_draft(draft_id)
+    return {}
+
+
+@route("POST", "/api/preview")
+def api_preview(app, body):
+    draft = clean_draft(body)
+    if body.get("number"):
+        draft["number"] = str(body["number"])
+    inv = compose_draft(app.store, draft)
+    return Pdf(render.render_bytes(inv, app.store.settings()))
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "invoicer"
 
