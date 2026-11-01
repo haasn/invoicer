@@ -383,6 +383,20 @@ function invoiceView(id) {
              h("iframe", { class: "pdf", src: pdfUrl(inv.id), title: "Invoice PDF" }));
 }
 
+// "Nov 2026", or "May-Nov 2026" (assumes periods don't span years).
+function servicePeriodLabel(period) {
+    if (!period || !period.from || !period.to) return "";
+    const from = MONTHS[+period.from.slice(5, 7) - 1], to = MONTHS[+period.to.slice(5, 7) - 1];
+    return `${from === to ? to : `${from}-${to}`} ${period.to.slice(0, 4)}`;
+}
+
+function mailtoUrl(inv) {
+    const to = ((S.clients[inv.client] || {}).emails || []).map(encodeURIComponent).join(",");
+    const label = servicePeriodLabel(inv.service_period);
+    const subject = `Invoice #${inv.number}${label ? `: ${label}` : ""}`;
+    return `mailto:${to}?subject=${encodeURIComponent(subject)}`;
+}
+
 function invoiceActions(inv) {
     const st = inv._.status;
     const out = [];
@@ -401,6 +415,7 @@ function invoiceActions(inv) {
         out.push(h("button", { onclick: () => invoiceAction(inv, "status", { status: "open" }) }, "Reopen"));
     }
     out.push(h("a", { class: "btn", href: pdfUrl(inv.id).replace(/#.*/, ""), target: "_blank" }, "Open PDF"));
+    out.push(h("a", { class: "btn", href: mailtoUrl(inv) }, "Write email"));
     out.push(h("button", { onclick: () => invoiceAction(inv, "sign").then(r => r && toast("Signed")) },
                inv._.signed ? "Re-sign (GPG)" : "Sign (GPG)"));
     out.push(h("button", { onclick: () => invoiceAction(inv, "reveal") }, "Show folder"));
