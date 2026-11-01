@@ -5,6 +5,7 @@
 #let r = d.recipient
 
 #let primary = rgb("#0e6990")
+#let accent = rgb("#0883b2")
 #let muted = rgb("#475269")
 #let ink = rgb("#0f152a")
 #let tint = rgb("#edf7f8")
@@ -52,15 +53,22 @@
   },
 )
 
-// Letterhead
+// Letterhead, styled like the website's header: Roboto at 1.3rem next to
+// a 32px icon, 0.2rem apart.
+#let icon = 15mm
 #grid(
   columns: (auto, 1fr),
-  column-gutter: 2mm,
+  column-gutter: icon * 3.2 / 32,
   align: horizon,
-  image("logo.svg", height: 15mm),
+  image("logo.svg", height: icon),
   stack(
     spacing: 2.2mm,
-    text(size: 21pt, tracking: 0.25em, fill: primary)[haas#text(fill: muted)[n]],
+    text(font: "Roboto", size: icon * 20.8 / 32, tracking: 0.25em, {
+      box(text(fill: gradient.linear(primary, accent, angle: 45deg))[haas])
+      // Typst drops the tracking where the style changes.
+      h(0.25em)
+      text(fill: muted)[n]
+    }),
     text(size: 8.5pt, fill: muted, d.tagline),
   ),
 )
