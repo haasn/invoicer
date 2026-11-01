@@ -15,7 +15,7 @@ import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from . import actions, gitsync, model, render, syncthing
 from .store import HOST, RevisionConflict, StoreError
@@ -41,7 +41,10 @@ class ApiError(Exception):
 
 
 class Pdf(bytes):
-    pass
+    def __new__(cls, data, filename=None):
+        pdf = super().__new__(cls, data)
+        pdf.filename = filename
+        return pdf
 
 
 ROUTES = []
@@ -142,7 +145,8 @@ def api_invoice_pdf(app, _body, inv_id):
     path = app.store.invoice_path(inv, ".pdf")
     if not path.exists():
         raise ApiError(404, "no archived PDF for this invoice")
-    return Pdf(path.read_bytes())
+    # The id rather than the number, which for imported invoices lacks the client code.
+    return Pdf(path.read_bytes(), f"Invoice {inv_id}.pdf")
 
 
 def clean_draft(body, existing=None):
@@ -431,7 +435,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": str(e)})
 
         if isinstance(result, Pdf):
-            return self.send(200, bytes(result), "application/pdf")
+            # Suggests the file name when saving from the browser's PDF viewer.
+            extra = {"Content-Disposition": f"inline; filename*=UTF-8''{quote(result.filename)}"
+                     } if result.filename else None
+            return self.send(200, bytes(result), "application/pdf", extra)
         return self.send_json(200, result)
 
     def static(self, method, path):
