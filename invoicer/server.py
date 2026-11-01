@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from . import actions, gitsync, model, render
-from .store import StoreError
+from .store import RevisionConflict, StoreError
 
 BASE = Path(__file__).resolve().parent.parent
 STATIC = BASE / "static"
@@ -33,10 +33,11 @@ CSP = ("default-src 'self'; img-src 'self' data:; frame-src 'self' blob:; "
 
 
 class ApiError(Exception):
-    def __init__(self, status, message, problems=None):
+    def __init__(self, status, message, problems=None, **extra):
         super().__init__(message)
         self.status = status
         self.problems = problems or []
+        self.extra = extra
 
 
 class Pdf(bytes):
@@ -192,7 +193,9 @@ def api_commit_draft(app, _body, draft_id):
 def api_save_draft(app, body, draft_id):
     store = app.store
     with app.lock:
-        draft = clean_draft(body, store.draft(draft_id))
+        existing = store.draft(draft_id)
+        store.check_revision(store.draft_path(draft_id), body.get("base_revision"))
+        draft = clean_draft(body, existing)
         draft["id"] = draft_id
         compose_draft(store, draft)
         store.save_draft(draft)
@@ -314,6 +317,7 @@ def api_save_client(app, body, client_id):
         raise ApiError(400, "Unknown unit")
     client["id"] = client_id
     with app.lock:
+        store.check_revision(store.client_path(client_id), body.get("base_revision"))
         path = store.save_client(client)
         app.autocommit([path], f"{'Update' if existing else 'Add'} client {client['name']}")
     return client
@@ -332,6 +336,7 @@ def api_save_settings(app, body):
     except (KeyError, IndexError, ValueError) as e:
         raise ApiError(400, f"Invalid number format: {e}") from None
     with app.lock:
+        store.check_revision(store.settings_path, body.get("base_revision"))
         app.autocommit([store.save_settings(settings)], "Update settings")
     return store.settings()
 
@@ -406,7 +411,12 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length) or b"null")
             result = fn(app, body, *match.groups())
         except ApiError as e:
-            return self.send_json(e.status, {"error": str(e), "problems": e.problems})
+            return self.send_json(e.status, {"error": str(e), "problems": e.problems, **e.extra})
+        except RevisionConflict as e:
+            return self.send_json(409, {"error": str(e), "deleted": e.current is None,
+                                        "changed_by": e.revision.get("host"),
+                                        "changed_at": e.revision.get("time"),
+                                        "current_revision": e.revision.get("id")})
         except StoreError as e:
             return self.send_json(404, {"error": str(e)})
         except render.RenderError as e:

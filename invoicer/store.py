@@ -1,11 +1,15 @@
 """Filesystem-backed storage: one JSON file per client, invoice and draft."""
 
 import copy
+import datetime as dt
 import json
 import os
 import re
+import socket
 import uuid
 from pathlib import Path
+
+HOST = socket.gethostname()
 
 DEFAULT_SETTINGS = {
     "sender": {
@@ -36,6 +40,17 @@ class StoreError(Exception):
     pass
 
 
+class RevisionConflict(StoreError):
+    """A file was changed (e.g. on another machine) since it was loaded."""
+
+    def __init__(self, path, current):
+        rev = (current or {}).get("revision") or {}
+        what = "deleted" if current is None else f"changed on {rev.get('host', '?')} at {rev.get('time', '?')}"
+        super().__init__(f"{path.name} was {what}")
+        self.current = current
+        self.revision = rev
+
+
 def check_id(ident):
     if not isinstance(ident, str) or not ID_RE.match(ident):
         raise StoreError(f"invalid id: {ident!r}")
@@ -64,6 +79,9 @@ class Store:
             return json.load(f)
 
     def _write(self, path, obj):
+        """Write `obj` atomically, stamping it with a new revision."""
+        obj["revision"] = {"id": uuid.uuid4().hex[:12], "host": HOST,
+                           "time": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
@@ -71,6 +89,19 @@ class Store:
             f.write("\n")
         os.replace(tmp, path)
         return path
+
+    def check_revision(self, path, base):
+        """Raise RevisionConflict unless `path` is still at revision `base`.
+
+        `base` is None for objects that were new (or had no revision yet).
+        """
+        if not path.exists():
+            if base:
+                raise RevisionConflict(path, None)
+            return
+        current = self._read(path)
+        if (current.get("revision") or {}).get("id") != base:
+            raise RevisionConflict(path, current)
 
     def _load_dir(self, pattern):
         out = []
@@ -121,7 +152,9 @@ class Store:
 
     def save_client(self, client):
         data = {k: v for k, v in client.items() if k != "id"}
-        return self._write(self.client_path(client["id"]), data)
+        path = self._write(self.client_path(client["id"]), data)
+        client["revision"] = data["revision"]
+        return path
 
     # Issued invoices: invoices/<year>/<id>.json
 

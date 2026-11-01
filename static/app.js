@@ -34,13 +34,16 @@ async function api(method, path, body) {
     const type = res.headers.get("Content-Type") || "";
     if (!res.ok) {
         let msg = `${res.status} ${res.statusText}`, problems = [];
+        let data = {};
         if (type.includes("json")) {
-            const j = await res.json();
-            msg = j.error || msg;
-            problems = j.problems || [];
+            data = await res.json();
+            msg = data.error || msg;
+            problems = data.problems || [];
         }
         const err = new Error(msg);
         err.problems = problems;
+        err.status = res.status;
+        err.data = data;
         throw err;
     }
     return type.includes("pdf") ? res.blob() : res.json();
@@ -108,6 +111,35 @@ async function reload() {
     S.resolved.forEach(note => toast(note));
     render();
 }
+
+function revisionOf(doc) {
+    return (doc && doc.revision && doc.revision.id) || null;
+}
+
+function changedBy(err) {
+    return `on ${err.data.changed_by || "another machine"} at ${(err.data.changed_at || "?").replace("T", " ").slice(0, 16)}`;
+}
+
+// Pick up changes synced from other machines when the tab becomes active,
+// without discarding anything typed into a form here.
+let lastRefresh = 0;
+async function refresh() {
+    if (!S || Date.now() - lastRefresh < 2000 || (ed && ed.dirty)) return;
+    lastRefresh = Date.now();
+    try {
+        S = await api("GET", "/api/state");
+    } catch (e) {
+        return;
+    }
+    S.resolved.forEach(note => toast(note));
+    const [view] = route();
+    if (view === "edit-client" || view === "settings") return renderSidebar();
+    if (ed && !ed.dirty && revisionOf(S.drafts.find(d => d.id === ed.id)) !== ed.base) ed = null;
+    render();
+}
+
+window.addEventListener("focus", refresh);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
 
 function render() {
     if (!S) return;
@@ -360,6 +392,41 @@ async function invoiceAction(inv, action, body = {}) {
     }
 }
 
+// Modal with one button per choice; resolves to the chosen value, or null.
+function choose(title, message, choices) {
+    return new Promise(resolve => {
+        const dlg = h("dialog", { class: "modal" },
+            h("form", { method: "dialog" },
+                h("h3", null, title),
+                h("p", null, message),
+                h("div", { class: "actions" }, choices.map(([value, label], i) =>
+                    h("button", { value, class: i === 0 ? "primary" : null }, label)))));
+        dlg.addEventListener("close", () => {
+            resolve(dlg.returnValue || null);
+            dlg.remove();
+        });
+        document.body.append(dlg);
+        dlg.showModal();
+    });
+}
+
+// Save a form, asking what to do if the object was changed elsewhere meanwhile.
+async function saveForm(path, obj) {
+    try {
+        return await api("PUT", path, obj);
+    } catch (err) {
+        if (err.status !== 409) throw err;
+        const choice = await choose("Changed elsewhere",
+            `This was ${err.data.deleted ? "deleted" : "saved"} ${changedBy(err)} after you opened this form.`,
+            [["reload", "Discard my changes"], ["overwrite", "Save mine anyway"]]);
+        if (choice !== "overwrite") {
+            await reload();
+            return null;
+        }
+        return api("PUT", path, { ...obj, base_revision: err.data.current_revision });
+    }
+}
+
 // Modal date picker; resolves to an ISO date, or null if cancelled.
 function askDate(title, label, confirmLabel, presets = []) {
     return new Promise(resolve => {
@@ -439,7 +506,8 @@ function draftView(id) {
 
     const draft = structuredClone(stored);
     delete draft._;
-    ed = { id, draft, dirty: false, timer: null, previewSeq: 0, previewUrl: null, saved: stored };
+    ed = { id, draft, dirty: false, timer: null, previewSeq: 0, previewUrl: null, saved: stored,
+           base: revisionOf(stored) };
 
     const changed = () => {
         ed.dirty = true;
@@ -591,6 +659,7 @@ function issueButton(saved) {
 async function issueDraft(e) {
     try {
         await flush(e);
+        if (ed !== e || e.dirty) return;
         const saved = e.saved;
         if (saved._.problems.length) return;
         const client = clientName(e.draft.client);
@@ -611,16 +680,48 @@ async function issueDraft(e) {
 
 async function flush(e) {
     clearTimeout(e.timer);
-    if (!e.dirty) return;
+    if (!e.dirty || e.conflict) return;
     e.dirty = false;
     if (ed === e) setEdStatus("Saving…");
-    const saved = await api("PUT", `/api/drafts/${encodeURIComponent(e.id)}`, payload(e.draft));
+    let saved;
+    try {
+        saved = await api("PUT", `/api/drafts/${encodeURIComponent(e.id)}`,
+                          { ...payload(e.draft), base_revision: e.base });
+    } catch (err) {
+        e.dirty = true;
+        if (err.status === 409) return draftConflict(e, err);
+        if (err.status === 404) {
+            e.dirty = false;
+            toast("This draft was issued or deleted on another machine.", "error");
+            if (ed === e) ed = null;
+            return reload();
+        }
+        throw err;
+    }
+    e.base = revisionOf(saved);
     const idx = S.drafts.findIndex(d => d.id === e.id);
     if (idx >= 0) S.drafts[idx] = saved;
     if (ed !== e) return;
     updateEdInfo(saved);
     setEdStatus(e.dirty ? "Unsaved changes" : "Saved");
     refreshPreview(e);
+}
+
+// The draft was saved elsewhere while this tab had unsaved edits.
+async function draftConflict(e, err) {
+    e.conflict = true;
+    if (ed === e) setEdStatus("Changed elsewhere");
+    const choice = await choose("This draft was changed elsewhere",
+        `It was saved ${changedBy(err)} while you had unsaved edits here.`,
+        [["theirs", "Load that version"], ["mine", "Keep my edits"]]);
+    e.conflict = false;
+    if (choice === "mine") {
+        e.base = err.data.current_revision;
+        return flush(e);
+    }
+    e.dirty = false;
+    if (ed === e) ed = null;
+    return reload();
 }
 
 async function refreshPreview(e) {
@@ -680,7 +781,7 @@ function clientForm(id) {
     const isNew = !id;
     const client = isNew ? { tax_scheme: "eu_reverse_charge", currency: "EUR" } : structuredClone(S.clients[id] || {});
     if (!isNew && !S.clients[id]) return h("div", { class: "empty" }, `No client ${id}.`);
-    const obj = { ...client, id: id || "" };
+    const obj = { ...client, id: id || "", base_revision: revisionOf(client) };
     const schemes = Object.entries(S.meta.tax_schemes).map(([k, v]) => [k, `${v.label} (${v.rate}% VAT)`]);
     const units = Object.entries(S.meta.units).map(([k, [one]]) => [k, one || "unit"]);
     const noteHint = () => (S.meta.tax_schemes[obj.tax_scheme || "eu_reverse_charge"] || {}).note;
@@ -710,7 +811,7 @@ function clientForm(id) {
         const cid = (obj.id || "").trim();
         if (!cid) return toast("Please enter an identifier", "error");
         try {
-            await api("PUT", `/api/clients/${encodeURIComponent(cid)}`, obj);
+            if (!await saveForm(`/api/clients/${encodeURIComponent(cid)}`, obj)) return;
             await reload();
             go("client", cid);
             toast("Client saved");
@@ -727,10 +828,11 @@ function clientForm(id) {
 
 function settingsForm() {
     const settings = structuredClone(S.settings);
+    settings.base_revision = revisionOf(S.settings);
     const sender = settings.sender;
     const save = async () => {
         try {
-            await api("PUT", "/api/settings", settings);
+            if (!await saveForm("/api/settings", settings)) return;
             await reload();
             toast("Settings saved");
         } catch (e) {
