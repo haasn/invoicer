@@ -122,7 +122,8 @@ function render() {
         settings: () => settingsForm(),
     };
     const main = document.getElementById("main");
-    main.replaceChildren(...[problemsBanner(), (views[view] || views[""])()].flat());
+    main.replaceChildren(...[problemsBanner(), (views[view] || views[""])()]
+        .flat(Infinity).filter(x => x != null && x !== false));
 }
 
 window.addEventListener("hashchange", render);
