@@ -347,3 +347,8 @@ table.items .row-actions { width: 112px; white-space: nowrap; }
 .field.check > span { font-size: 14px; color: var(--text); font-weight: 400; }
 .nav-item.add { font-size: 13px; }
 .nav-item.add:not(.active) { color: var(--text-2); }
+
+/* Git status */
+
+.git { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.git-error { color: var(--bad); white-space: pre-wrap; }

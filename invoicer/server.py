@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import actions, model, render
+from . import actions, gitsync, model, render
 from .store import StoreError
 
 BASE = Path(__file__).resolve().parent.parent
@@ -110,6 +110,7 @@ def api_state(app, _body):
         "invoices": [annotate(i) for i in store.invoices()],
         "drafts": drafts,
         "problems": store.problems(),
+        "git": app.git_status(),
         "meta": {
             "units": model.UNITS,
             "tax_schemes": model.TAX_SCHEMES,
@@ -167,6 +168,15 @@ def api_new_draft(app, body):
     return draft_info(store, draft, store.clients(), store.settings())
 
 
+@route("POST", r"/api/drafts/([^/]+)/commit")
+def api_commit_draft(app, _body, draft_id):
+    draft = app.store.draft(draft_id)
+    with app.lock:
+        app.autocommit([app.store.draft_path(draft_id)],
+                       f"Save draft for {client_label(app.store, draft)}")
+    return {}
+
+
 @route("PUT", r"/api/drafts/([^/]+)")
 def api_save_draft(app, body, draft_id):
     store = app.store
@@ -180,8 +190,10 @@ def api_save_draft(app, body, draft_id):
 
 @route("DELETE", r"/api/drafts/([^/]+)")
 def api_delete_draft(app, _body, draft_id):
+    label = client_label(app.store, app.store.draft(draft_id))
     with app.lock:
-        app.store.delete_draft(draft_id)
+        path = app.store.delete_draft(draft_id)
+        app.autocommit([path], f"Delete draft for {label}")
     return {}
 
 
@@ -194,12 +206,20 @@ def api_preview(app, body):
     return Pdf(render.render_bytes(inv, app.store.settings()))
 
 
+def client_label(store, doc):
+    try:
+        return store.client(doc.get("client", "")).get("name", doc["client"])
+    except StoreError:
+        return doc.get("client", "?")
+
+
 def run_action(app, fn, *args):
     with app.lock:
         try:
-            doc, _paths, _message = fn(app.store, *args)
+            doc, paths, message = fn(app.store, *args)
         except actions.ActionError as e:
             raise ApiError(422, str(e), e.problems) from None
+        app.autocommit(paths, message)
     return annotate(doc)
 
 
@@ -277,7 +297,8 @@ def api_save_client(app, body, client_id):
         raise ApiError(400, "Unknown unit")
     client["id"] = client_id
     with app.lock:
-        store.save_client(client)
+        path = store.save_client(client)
+        app.autocommit([path], f"{'Update' if existing else 'Add'} client {client['name']}")
     return client
 
 
@@ -287,13 +308,25 @@ def api_save_settings(app, body):
     settings = store.settings()
     settings["sender"] = update_fields(settings["sender"], body.get("sender") or {}, SENDER_FIELDS)
     settings = update_fields(settings, body, SETTINGS_FIELDS)
+    if "auto_commit" in body:
+        settings["auto_commit"] = bool(body["auto_commit"])
     try:
         settings.get("number_format", "").format(code="X", year=2000, seq=1)
     except (KeyError, IndexError, ValueError) as e:
         raise ApiError(400, f"Invalid number format: {e}") from None
     with app.lock:
-        store.save_settings(settings)
+        app.autocommit([store.save_settings(settings)], "Update settings")
     return store.settings()
+
+
+@route("POST", "/api/sync")
+def api_sync(app, _body):
+    with app.lock:
+        try:
+            output = gitsync.sync(app.store.root)
+        except gitsync.GitError as e:
+            raise ApiError(500, f"Sync failed: {e}") from None
+    return {"output": output}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -398,3 +431,26 @@ class App(ThreadingHTTPServer):
         port = self.server_address[1]
         self.allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
         self.url = f"http://127.0.0.1:{port}/"
+        self.git_error = None
+
+    def autocommit(self, paths, message):
+        """Commit `paths` if enabled; failures are reported via git_status()."""
+        root = self.store.root
+        if not self.store.settings().get("auto_commit") or not gitsync.is_repo(root):
+            return
+        try:
+            gitsync.commit(root, paths, message)
+            self.git_error = None
+        except gitsync.GitError as e:
+            self.git_error = f"Commit failed: {e}"
+
+    def git_status(self):
+        if not gitsync.is_repo(self.store.root):
+            return None
+        try:
+            st = gitsync.status(self.store.root)
+        except gitsync.GitError as e:
+            st = {"error": str(e)}
+        st["error"] = self.git_error or st.get("error")
+        st["auto_commit"] = bool(self.store.settings().get("auto_commit"))
+        return st

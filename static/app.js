@@ -153,7 +153,33 @@ function renderSidebar() {
 }
 
 function sidebarFoot() {
-    return [h("a", { href: "#/settings" }, "Settings")];
+    const g = S.git;
+    const out = [];
+    if (g) {
+        const bits = [g.branch || "detached"];
+        if (g.ahead) bits.push(`${g.ahead} to push`);
+        if (g.behind) bits.push(`${g.behind} to pull`);
+        if (g.dirty) bits.push(`${g.dirty} uncommitted`);
+        if (!g.auto_commit) bits.push("auto-commit off");
+        out.push(h("div", { class: "git" }, h("span", null, "git: " + bits.join(" · ")),
+            g.upstream ? h("button", { class: "small", onclick: syncRepo }, "Sync") : null));
+        if (g.error) out.push(h("div", { class: "git-error" }, g.error));
+    }
+    out.push(h("a", { href: "#/settings" }, "Settings"));
+    return out;
+}
+
+async function syncRepo(e) {
+    const button = e.target;
+    button.disabled = true;
+    button.textContent = "Syncing…";
+    try {
+        const res = await api("POST", "/api/sync");
+        toast(res.output || "Up to date");
+    } catch (err) {
+        showError(err);
+    }
+    await reload().catch(showError);
 }
 
 function problemsBanner() {
@@ -362,7 +388,10 @@ function closeEditor() {
     ed = null;
     clearTimeout(old.timer);
     if (old.previewUrl) URL.revokeObjectURL(old.previewUrl);
-    if (old.dirty) flush(old).catch(showError);
+    flush(old)
+        .then(() => api("POST", `/api/drafts/${encodeURIComponent(old.id)}/commit`))
+        .then(() => reload())
+        .catch(e => { if (!/no such draft/.test(e.message)) showError(e); });
 }
 
 function draftView(id) {
@@ -688,6 +717,7 @@ function settingsForm() {
             ["number_format", "Number format", "text",
              { hint: "Placeholders: {code}, {year}, {seq:03}" }],
             ["due_days", "Default payment term (days)", "number"],
+            ["auto_commit", "Commit every change to git (if the data directory is a git repository)", "check"],
         ])),
         h("div", { class: "actions" }, h("button", { class: "primary", onclick: save }, "Save")));
 }
