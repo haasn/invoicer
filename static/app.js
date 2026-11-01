@@ -120,6 +120,7 @@ function render() {
         draft: () => draftView(id),
         "edit-client": () => clientForm(id),
         settings: () => settingsForm(),
+        reports: () => taxView(),
     };
     const main = document.getElementById("main");
     main.replaceChildren(...[problemsBanner(), (views[view] || views[""])()]
@@ -153,6 +154,8 @@ function renderSidebar() {
                            active, c.archived ? "archived" : ""));
     }
     items.push(navItem("#/edit-client/", "+ New client", "", view === "edit-client" && !id, "add"));
+    items.push(h("div", { class: "nav-head" }, "Reports"));
+    items.push(navItem("#/reports/tax", "Tax summary", "", view === "reports" && id === "tax"));
     items.push(h("div", { class: "sidebar-foot" }, sidebarFoot()));
     document.getElementById("sidebar").replaceChildren(...items);
 }
