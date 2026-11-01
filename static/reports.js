@@ -213,36 +213,6 @@ function taxView() {
                                          h("td", null, periodLabel(k)), sumCells(s))),
         h("tr", null, h("td", null, "Total"), sumCells(total)));
 
-    // Per client, e.g. for the Zusammenfassende Meldung.
-    const colKeys = REPORT.year === "all"
-        ? periodRange("year", slice.from, slice.to)
-        : periodRange("quarter", slice.from, slice.to);
-    const byClient = new Map();
-    for (const r of rows) {
-        const id = r.inv.client;
-        if (!byClient.has(id)) byClient.set(id, { inv: r.inv, total: 0, cols: {} });
-        const c = byClient.get(id);
-        const k = REPORT.year === "all" ? r.date.slice(0, 4) : periodKey(r.date, "quarter");
-        c.cols[k] = (c.cols[k] || 0) + r.inv._.net_cents;
-        c.total += r.inv._.net_cents;
-        if (r.inv.issue_date > c.inv.issue_date) c.inv = r.inv;
-    }
-    const clientRows = [...byClient].sort((a, b) => b[1].total - a[1].total).map(([id, c]) => {
-        const client = S.clients[id] || {};
-        const recip = c.inv.recipient || {};
-        return h("tr", { onclick: () => go("client", id) },
-            h("td", null, clientName(id)),
-            h("td", null, client.country || recip.country || ""),
-            h("td", { class: "nowrap" }, client.vat_id || recip.vat_id || "—"),
-            h("td", null, schemeLabel(client.tax_scheme || (c.inv.tax && c.inv.tax.scheme))),
-            colKeys.map(k => h("td", { class: "num" }, c.cols[k] ? amount(c.cols[k]) : "—")),
-            h("td", { class: "num" }, h("strong", null, amount(c.total))));
-    });
-    const clients = moneyTable(
-        [["Client"], ["Country"], ["VAT ID"], ["Tax treatment"],
-         ...colKeys.map(k => [periodLabel(k), true]), [`Net (${currency})`, true]],
-        clientRows, null, "clickable");
-
     const invoiceRows = [...rows].sort((a, b) => b.date.localeCompare(a.date)).map(r =>
         h("tr", { onclick: () => go("invoice", r.inv.id) },
             h("td", null, r.inv.number),
@@ -264,9 +234,70 @@ function taxView() {
           h("button", { onclick: () => downloadCsv(rows, scope), disabled: !rows.length }, "Export CSV")),
         reportFilters(),
         basisNotes(slice),
+        euSection(rows, currency),
         h("h2", null, `By ${GRANS[REPORT.gran].toLowerCase()}`), summary,
-        h("h2", null, "By client"), byClient.size ? clients : h("div", { class: "empty" }, "No invoices in this selection."),
         h("h2", null, `Invoices (${rows.length})`), rows.length ? invoices : null,
+    ];
+}
+
+// Reverse-charge services to EU businesses per quarter and client: the lines
+// of the Zusammenfassende Meldung; each quarter's total goes into Kennzahl 21
+// of the USt-Voranmeldung.
+function euSection(rows, currency) {
+    const vatIdOf = inv => (inv.recipient && inv.recipient.vat_id) || (S.clients[inv.client] || {}).vat_id || "";
+    const eu = rows.filter(r => r.inv.tax && r.inv.tax.scheme === "eu_reverse_charge");
+    const missing = eu.filter(r => !vatIdOf(r.inv));
+
+    const quarters = new Map();
+    for (const r of [...eu].sort((a, b) => a.date.localeCompare(b.date))) {
+        const vatId = vatIdOf(r.inv).replace(/\s+/g, "");
+        if (!vatId) continue;
+        const q = periodKey(r.date, "quarter");
+        if (!quarters.has(q)) quarters.set(q, new Map());
+        const lines = quarters.get(q);
+        const key = `${r.inv.client}|${vatId}`;
+        if (!lines.has(key)) lines.set(key, { client: r.inv.client, vatId, net: 0, count: 0 });
+        const line = lines.get(key);
+        line.net += r.inv._.net_cents;
+        line.count += 1;
+    }
+
+    const body = [];
+    for (const [q, lines] of quarters) {
+        const sorted = [...lines.values()].sort((a, b) => clientName(a.client).localeCompare(clientName(b.client)));
+        sorted.forEach((l, i) => body.push(h("tr", { onclick: () => go("client", l.client) },
+            h("td", { class: i ? "muted" : null }, periodLabel(q)),
+            h("td", null, clientName(l.client)),
+            h("td", null, l.vatId.slice(0, 2)),
+            h("td", { class: "nowrap" }, l.vatId.slice(2)),
+            h("td", { class: "num" }, l.count),
+            h("td", { class: "num" }, amount(l.net)))));
+        const total = sorted.reduce((a, l) => a + l.net, 0);
+        body.push(h("tr", { class: "subtotal" },
+            h("td", { colspan: 5 }, `${periodLabel(q)} total (USt-VA Kennzahl 21)`),
+            h("td", { class: "num" }, amount(total))));
+    }
+
+    const notes = [];
+    if (REPORT.basis !== "service") {
+        notes.push(h("p", { class: "hint" },
+            "Reverse-charge services are reported for the period in which the service was performed "
+            + "(§ 18b UStG), i.e. by service period end. ",
+            h("button", { class: "small", onclick: () => { REPORT.basis = "service"; render(); } },
+              "Count by service period end")));
+    }
+    if (missing.length) {
+        notes.push(h("div", { class: "banner" },
+            `${missing.length} EU reverse-charge invoice(s) have no recipient VAT ID and are not listed: `
+            + missing.map(r => `${r.inv.number} (${clientName(r.inv.client)})`).join(", ")));
+    }
+    return [
+        h("h2", null, "EU reverse-charge services by client"),
+        notes,
+        quarters.size
+            ? moneyTable([["Quarter"], ["Client"], ["Country"], ["VAT number"], ["Invoices", true],
+                          [`Net (${currency})`, true]], body, null, "clickable")
+            : h("div", { class: "empty" }, "No reverse-charge services to EU businesses in this selection."),
     ];
 }
 
