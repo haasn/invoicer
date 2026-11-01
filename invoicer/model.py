@@ -148,7 +148,6 @@ def new_draft(client, settings, today, template=None):
         "intro": "",
         "items": [],
         "outro": "",
-        "email_body": "",
     }
     if template:
         draft["title"] = template.get("title") or draft["title"]

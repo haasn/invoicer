@@ -283,15 +283,6 @@ button.icon:hover { border-color: var(--border); color: var(--text); }
     top: 0;
 }
 
-pre.email {
-    white-space: pre-wrap;
-    font: inherit;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-2);
-}
-
 /* Toasts */
 
 #toasts {

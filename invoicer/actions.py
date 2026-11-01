@@ -13,9 +13,9 @@ from .store import StoreError, check_id
 
 INVOICE_KEYS = ("id", "number", "seq", "client", "status", "issue_date", "due_date",
                 "paid_date", "service_period", "currency", "title", "intro", "items",
-                "outro", "tax", "sender", "recipient", "email_body", "legacy")
+                "outro", "tax", "sender", "recipient", "legacy")
 DRAFT_KEYS = ("client", "status", "number", "seq", "issue_date", "due_date",
-              "service_period", "title", "intro", "items", "outro", "email_body")
+              "service_period", "title", "intro", "items", "outro")
 
 
 class ActionError(Exception):

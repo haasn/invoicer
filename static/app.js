@@ -377,8 +377,7 @@ function invoiceView(id) {
         inv.legacy ? fact("Imported from", `${inv.legacy.commit.slice(0, 10)} “${inv.legacy.subject}”`) : null);
 
     const left = h("div", null, head, facts,
-        h("div", { class: "actions" }, invoiceActions(inv)),
-        inv.email_body ? [h("h2", null, "Email text"), h("pre", { class: "email" }, inv.email_body)] : null);
+        h("div", { class: "actions" }, invoiceActions(inv)));
 
     return h("div", { class: "detail" }, left,
              h("iframe", { class: "pdf", src: pdfUrl(inv.id), title: "Invoice PDF" }));
@@ -405,10 +404,6 @@ function invoiceActions(inv) {
     out.push(h("button", { onclick: () => invoiceAction(inv, "sign").then(r => r && toast("Signed")) },
                inv._.signed ? "Re-sign (GPG)" : "Sign (GPG)"));
     out.push(h("button", { onclick: () => invoiceAction(inv, "reveal") }, "Show folder"));
-    if (inv.email_body) {
-        out.push(h("button", { onclick: () => navigator.clipboard.writeText(inv.email_body)
-            .then(() => toast("Email text copied"), showError) }, "Copy email text"));
-    }
     out.push(h("button", { onclick: () => newDraft(inv.client, inv.id) }, "Duplicate as draft"));
     out.push(h("button", { class: "danger", onclick: async () => {
         const msg = inv.legacy
@@ -497,7 +492,7 @@ function fact(label, value) {
 /* Draft editor */
 
 const EDITABLE = ["client", "issue_date", "due_date", "service_period", "title",
-                  "intro", "items", "outro", "email_body", "number"];
+                  "intro", "items", "outro", "number"];
 
 function payload(draft) {
     return Object.fromEntries(EDITABLE.filter(k => k in draft).map(k => [k, draft[k]]));
@@ -658,7 +653,6 @@ function draftView(id) {
         h("div", { class: "items-foot" },
           h("button", { onclick: addItem }, "+ Add item"), h("div", { class: "spacer" }), ed.totals),
         field("Text below totals", area("outro", 2, "Optional closing text")),
-        field("Cover email (not printed)", area("email_body", 5, "Text for the email you send with the PDF")),
         ed.problems,
         h("div", { class: "actions" },
           ed.issueBtn,

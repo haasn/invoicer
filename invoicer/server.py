@@ -154,7 +154,7 @@ def clean_draft(body, existing=None):
     for k in ("number", "seq"):
         if k in existing:
             draft[k] = existing[k]
-    for k in ("issue_date", "due_date", "title", "intro", "outro", "email_body"):
+    for k in ("issue_date", "due_date", "title", "intro", "outro"):
         draft[k] = str(body.get(k) or "")
     period = body.get("service_period") or {}
     draft["service_period"] = {"from": str(period.get("from") or ""),
