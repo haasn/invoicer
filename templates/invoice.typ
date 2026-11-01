@@ -58,18 +58,18 @@
 #let icon = 15mm
 #grid(
   columns: (auto, 1fr),
-  column-gutter: icon * 3.2 / 32,
+  column-gutter: icon * 4 / 32,
   align: horizon,
   image("logo.svg", height: icon),
   stack(
     spacing: 2.2mm,
-    text(font: "Roboto", size: icon * 20.8 / 32, tracking: 0.25em, {
+    text(font: "Roboto", size: icon / 2, tracking: 0.25em, {
       box(text(fill: gradient.linear(primary, accent, angle: 45deg))[haas])
       // Typst drops the tracking where the style changes.
       h(0.25em)
       text(fill: muted)[n]
     }),
-    text(size: 8.5pt, fill: muted, d.tagline),
+    text(size: 8pt, fill: muted, d.tagline),
   ),
 )
 
