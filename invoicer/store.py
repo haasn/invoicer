@@ -71,6 +71,8 @@ class Store:
     def _load_dir(self, pattern):
         out = []
         for path in sorted(self.root.glob(pattern)):
+            if CONFLICT_RE.search(path.name):
+                continue    # reported by problems()
             try:
                 out.append((path, self._read(path)))
             except (OSError, ValueError) as e:
