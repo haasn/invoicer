@@ -394,7 +394,10 @@ function mailtoUrl(inv) {
     const to = ((S.clients[inv.client] || {}).emails || []).map(encodeURIComponent).join(",");
     const label = servicePeriodLabel(inv.service_period);
     const subject = `Invoice ${inv.number}${label ? `: ${label}` : ""}`;
-    return `mailto:${to}?subject=${encodeURIComponent(subject)}`;
+    // Not standard, but webmail handlers may use it to pick the identity.
+    const from = (inv.sender || {}).email || S.settings.sender.email;
+    const query = new URLSearchParams({ subject, ...(from ? { from } : {}) });
+    return `mailto:${to}?${query.toString().replace(/\+/g, "%20")}`;
 }
 
 function invoiceActions(inv) {
