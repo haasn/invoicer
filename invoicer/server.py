@@ -8,6 +8,7 @@ in the served page.
 
 import datetime as dt
 import json
+import os
 import re
 import secrets
 import subprocess
@@ -432,14 +433,33 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(200, file.read_bytes(), CONTENT_TYPES[file.suffix])
 
 
+def load_token(path):
+    """Read the API token from `path`, creating it if needed.
+
+    Keeping the token across restarts means open browser tabs keep working.
+    """
+    try:
+        token = path.read_text().strip()
+        if token:
+            return token
+    except FileNotFoundError:
+        pass
+    token = secrets.token_urlsafe(24)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token + "\n")
+    return token
+
+
 class App(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, store, port, verbose=False):
+    def __init__(self, store, port, verbose=False, token_file=None):
         super().__init__(("127.0.0.1", port), Handler)
         self.store = store
         self.verbose = verbose
-        self.token = secrets.token_urlsafe(24)
+        self.token = load_token(Path(token_file)) if token_file else secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         port = self.server_address[1]
         self.allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}

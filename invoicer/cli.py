@@ -51,7 +51,7 @@ def cmd_import_git(store, args):
 
 def cmd_serve(store, args):
     try:
-        app = server.App(store, args.port, args.verbose)
+        app = server.App(store, args.port, args.verbose, args.token_file)
     except OSError as e:
         sys.exit(f"Cannot listen on port {args.port}: {e} (already running?)")
     print(f"Serving {store.root} at {app.url}")
@@ -71,6 +71,7 @@ def main(argv=None):
     sv = sub.add_parser("serve", help="run the web UI (default)")
     sv.add_argument("--port", type=int, default=8765)
     sv.add_argument("--no-browser", action="store_true")
+    sv.add_argument("--token-file", help="keep the API token in this file across restarts")
     sv.add_argument("-v", "--verbose", action="store_true")
 
     r = sub.add_parser("render", help="render an invoice or draft to PDF")
