@@ -293,7 +293,7 @@ function invoiceView(id) {
         fact(`VAT ${inv.tax ? inv.tax.rate : 0}%`, money(inv._.vat, inv.currency)),
         fact("Total", h("strong", null, money(inv._.gross, inv.currency))),
         inv._.signed ? fact("Signature", `${inv.id}.pdf.asc`) : null,
-        inv.legacy ? fact("Imported from", `${inv.legacy.branch} @ ${inv.legacy.commit.slice(0, 10)}`) : null);
+        inv.legacy ? fact("Imported from", `${inv.legacy.commit.slice(0, 10)} “${inv.legacy.subject}”`) : null);
 
     const left = h("div", null, head, facts,
         h("div", { class: "actions" }, invoiceActions(inv)),

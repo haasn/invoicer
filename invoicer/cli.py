@@ -6,7 +6,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from . import model, render, server
+from . import legacy, model, render, server
 from .store import Store, StoreError
 
 CONFIG = Path("~/.config/invoicer/config.json").expanduser()
@@ -37,6 +37,18 @@ def cmd_render(store, args):
     print(out)
 
 
+def cmd_import_git(store, args):
+    mappings = []
+    for spec in args.client:
+        try:
+            pattern, rest = spec.split("=", 1)
+            client, code = rest.split(":", 1)
+        except ValueError:
+            sys.exit(f"invalid --client {spec!r}, expected PATTERN=ID:CODE")
+        mappings.append(legacy.Mapping(pattern, client, code))
+    legacy.import_git(store, args.repo, mappings, pdfs=not args.no_pdf)
+
+
 def cmd_serve(store, args):
     try:
         app = server.App(store, args.port, args.verbose)
@@ -65,6 +77,13 @@ def main(argv=None):
     r.add_argument("id")
     r.add_argument("-o", "--output")
 
+    im = sub.add_parser("import-git", help="import invoices from the old LaTeX repository")
+    im.add_argument("repo")
+    im.add_argument("--client", action="append", required=True, metavar="PATTERN=ID:CODE",
+                    help="map recipients whose name contains PATTERN to client ID "
+                         "with number prefix CODE (repeatable)")
+    im.add_argument("--no-pdf", action="store_true", help="do not rebuild PDFs")
+
     # Default to "serve", keeping global options in front of it.
     argv = sys.argv[1:] if argv is None else list(argv)
     i = 0
@@ -75,7 +94,8 @@ def main(argv=None):
     args = p.parse_args(argv)
     store = Store(data_dir(args))
     try:
-        {"serve": cmd_serve, "render": cmd_render}[args.cmd](store, args)
+        commands = {"serve": cmd_serve, "render": cmd_render, "import-git": cmd_import_git}
+        commands[args.cmd](store, args)
     except (StoreError, render.RenderError, ValueError) as e:
         sys.exit(f"error: {e}")
     return 0
