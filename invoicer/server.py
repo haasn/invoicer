@@ -226,6 +226,76 @@ def api_reveal(app, _body, inv_id):
     return {}
 
 
+CLIENT_FIELDS = {
+    "name": str, "code": str, "address": list, "country": str, "vat_id": str,
+    "tax_scheme": str, "tax_note": str, "due_days": int, "currency": str,
+    "title": str, "sender_email": str, "rate": str, "rate_unit": str,
+    "buyer_reference": str, "archived": bool,
+}
+SENDER_FIELDS = {k: list if k == "address" else str for k in model.SENDER_FIELDS}
+SETTINGS_FIELDS = {"tagline": str, "number_format": str, "due_days": int}
+
+
+def update_fields(existing, body, spec):
+    """Overwrite the fields in `spec` from user input; drop empty ones."""
+    out = dict(existing)
+    for key, typ in spec.items():
+        if key not in body:
+            continue
+        value = body[key]
+        if typ is list:
+            value = [str(v).strip() for v in value or [] if str(v).strip()]
+        elif typ is int:
+            value = int(value) if str(value).strip() else None
+        elif typ is bool:
+            value = bool(value)
+        else:
+            value = str(value or "").strip()
+        if value in (None, "", [], False):
+            out.pop(key, None)
+        else:
+            out[key] = value
+    return out
+
+
+@route("PUT", r"/api/clients/([^/]+)")
+def api_save_client(app, body, client_id):
+    store = app.store
+    try:
+        existing = store.client(client_id)
+    except StoreError:
+        existing = {}
+    client = update_fields(existing, body, CLIENT_FIELDS)
+    client.pop("id", None)
+    if not client.get("name"):
+        raise ApiError(400, "Client name is required")
+    if not re.fullmatch(r"[A-Za-z0-9]+", client.get("code", "")):
+        raise ApiError(400, "Client code must be alphanumeric, e.g. ACME")
+    if client.get("tax_scheme", "eu_reverse_charge") not in model.TAX_SCHEMES:
+        raise ApiError(400, "Unknown tax scheme")
+    if client.get("rate_unit", "C62") not in model.UNITS:
+        raise ApiError(400, "Unknown unit")
+    client["id"] = client_id
+    with app.lock:
+        store.save_client(client)
+    return client
+
+
+@route("PUT", "/api/settings")
+def api_save_settings(app, body):
+    store = app.store
+    settings = store.settings()
+    settings["sender"] = update_fields(settings["sender"], body.get("sender") or {}, SENDER_FIELDS)
+    settings = update_fields(settings, body, SETTINGS_FIELDS)
+    try:
+        settings.get("number_format", "").format(code="X", year=2000, seq=1)
+    except (KeyError, IndexError, ValueError) as e:
+        raise ApiError(400, f"Invalid number format: {e}") from None
+    with app.lock:
+        store.save_settings(settings)
+    return store.settings()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "invoicer"
 

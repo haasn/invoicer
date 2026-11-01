@@ -112,7 +112,8 @@ class Store:
         return c
 
     def save_client(self, client):
-        return self._write(self.client_path(client["id"]), client)
+        data = {k: v for k, v in client.items() if k != "id"}
+        return self._write(self.client_path(client["id"]), data)
 
     # Issued invoices: invoices/<year>/<id>.json
 

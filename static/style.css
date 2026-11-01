@@ -338,3 +338,12 @@ table.items .row-actions { width: 112px; white-space: nowrap; }
     padding-right: 120px;
 }
 .ed-status { font-size: 13px; }
+
+/* Forms */
+
+.form.narrow { max-width: 760px; }
+.field small { font-size: 12px; }
+.field.check { flex-direction: row; align-items: center; gap: 8px; }
+.field.check > span { font-size: 14px; color: var(--text); font-weight: 400; }
+.nav-item.add { font-size: 13px; }
+.nav-item.add:not(.active) { color: var(--text-2); }

@@ -114,6 +114,8 @@ function render() {
         client: () => listView(id),
         invoice: () => invoiceView(id),
         draft: () => draftView(id),
+        "edit-client": () => clientForm(id),
+        settings: () => settingsForm(),
     };
     const main = document.getElementById("main");
     main.replaceChildren(...[problemsBanner(), (views[view] || views[""])()].flat());
@@ -145,12 +147,13 @@ function renderSidebar() {
                            outstanding.length ? sumByCurrency(outstanding) : "",
                            active, c.archived ? "archived" : ""));
     }
+    items.push(navItem("#/edit-client/", "+ New client", "", view === "edit-client" && !id, "add"));
     items.push(h("div", { class: "sidebar-foot" }, sidebarFoot()));
     document.getElementById("sidebar").replaceChildren(...items);
 }
 
 function sidebarFoot() {
-    return [];
+    return [h("a", { href: "#/settings" }, "Settings")];
 }
 
 function problemsBanner() {
@@ -214,7 +217,8 @@ function listView(clientId) {
 
 function headActions(client) {
     if (client) {
-        return h("button", { class: "primary", onclick: () => newDraft(client.id) }, "+ New invoice");
+        return [h("button", { onclick: () => go("edit-client", client.id) }, "Edit client"),
+                h("button", { class: "primary", onclick: () => newDraft(client.id) }, "+ New invoice")];
     }
     const clients = Object.values(S.clients).filter(c => !c.archived);
     if (!clients.length) return [];
@@ -576,6 +580,116 @@ async function deleteDraft(id) {
     } catch (e) {
         showError(e);
     }
+}
+
+/* Client and settings forms */
+
+// Each field: [key, label, type, extra]. Types: text, lines, area, number, select, check.
+function formFields(obj, fields) {
+    return fields.map(([key, label, type, extra = {}]) => {
+        const value = obj[key];
+        let input;
+        if (type === "lines" || type === "area") {
+            input = h("textarea", { rows: extra.rows || 3, placeholder: extra.placeholder || "",
+                value: Array.isArray(value) ? value.join("\n") : (value || ""),
+                oninput: e => { obj[key] = type === "lines" ? e.target.value.split("\n") : e.target.value; } });
+        } else if (type === "select") {
+            input = h("select", { onchange: e => { obj[key] = e.target.value; } },
+                extra.options.map(([v, l]) => h("option", { value: v, selected: v === (value || extra.default) }, l)));
+        } else if (type === "check") {
+            return h("label", { class: "field check wide" },
+                h("input", { type: "checkbox", checked: !!value, onchange: e => { obj[key] = e.target.checked; } }),
+                h("span", null, label));
+        } else {
+            input = h("input", { type: type === "number" ? "number" : "text", value: value ?? "",
+                placeholder: extra.placeholder || "", oninput: e => { obj[key] = e.target.value; } });
+        }
+        return h("label", { class: `field ${extra.wide ? "wide" : ""}` },
+                 h("span", null, label), input, extra.hint ? h("small", { class: "muted" }, extra.hint) : null);
+    });
+}
+
+function clientForm(id) {
+    const isNew = !id;
+    const client = isNew ? { tax_scheme: "eu_reverse_charge", currency: "EUR" } : structuredClone(S.clients[id] || {});
+    if (!isNew && !S.clients[id]) return h("div", { class: "empty" }, `No client ${id}.`);
+    const obj = { ...client, id: id || "" };
+    const schemes = Object.entries(S.meta.tax_schemes).map(([k, v]) => [k, `${v.label} (${v.rate}% VAT)`]);
+    const units = Object.entries(S.meta.units).map(([k, [one]]) => [k, one || "unit"]);
+    const noteHint = () => (S.meta.tax_schemes[obj.tax_scheme || "eu_reverse_charge"] || {}).note;
+
+    const fields = [
+        isNew ? ["id", "Identifier (file name, cannot be changed)", "text", { placeholder: "e.g. acme" }] : null,
+        ["name", "Name", "text", { wide: true }],
+        ["code", "Code (invoice number prefix)", "text", { placeholder: "e.g. ACM" }],
+        ["country", "Country (ISO code)", "text", { placeholder: "e.g. FR" }],
+        ["address", "Address (one line per row, include the country if abroad)", "lines", { wide: true }],
+        ["vat_id", "VAT ID", "text"],
+        ["buyer_reference", "Buyer reference / Leitweg-ID", "text", { hint: "Only needed for e-invoicing" }],
+        ["tax_scheme", "Tax treatment", "select", { options: schemes, default: "eu_reverse_charge", wide: true }],
+        ["tax_note", "Tax notice on invoice", "area", { wide: true, rows: 2, placeholder: noteHint(),
+            hint: "Leave empty to use the default text shown." }],
+        ["due_days", "Payment term (days)", "number", { placeholder: String(S.settings.due_days) }],
+        ["currency", "Currency", "text"],
+        ["title", "Default invoice title", "text", { placeholder: "e.g. Consulting" }],
+        ["sender_email", "Your email on invoices (override)", "text", { placeholder: S.settings.sender.email }],
+        ["rate", "Default price for new rows", "text"],
+        ["rate_unit", "Default unit for new rows", "select", { options: units, default: "C62" }],
+        ["archived", "Archived (hide from new invoices)", "check"],
+    ].filter(Boolean);
+
+    const save = async () => {
+        const cid = (obj.id || "").trim();
+        if (!cid) return toast("Please enter an identifier", "error");
+        try {
+            await api("PUT", `/api/clients/${encodeURIComponent(cid)}`, obj);
+            await reload();
+            go("client", cid);
+            toast("Client saved");
+        } catch (e) {
+            showError(e);
+        }
+    };
+    return h("div", { class: "form narrow" },
+        h("div", { class: "page-head" }, h("h1", null, isNew ? "New client" : `Edit ${client.name}`)),
+        h("div", { class: "grid" }, formFields(obj, fields)),
+        h("div", { class: "actions" }, h("button", { class: "primary", onclick: save }, "Save"),
+          h("button", { onclick: () => history.back() }, "Cancel")));
+}
+
+function settingsForm() {
+    const settings = structuredClone(S.settings);
+    const sender = settings.sender;
+    const save = async () => {
+        try {
+            await api("PUT", "/api/settings", settings);
+            await reload();
+            toast("Settings saved");
+        } catch (e) {
+            showError(e);
+        }
+    };
+    return h("div", { class: "form narrow" },
+        h("div", { class: "page-head" }, h("h1", null, "Settings")),
+        h("h2", null, "Your business"),
+        h("div", { class: "grid" }, formFields(sender, [
+            ["name", "Business name", "text", { wide: true }],
+            ["address", "Address (one line per row)", "lines", { wide: true }],
+            ["email", "Email", "text"],
+            ["website", "Website", "text"],
+            ["vat_id", "VAT ID (USt-IdNr.)", "text"],
+            ["tax_number", "Tax number (Steuernummer)", "text"],
+            ["iban", "IBAN", "text"],
+            ["bic", "BIC", "text"],
+        ])),
+        h("h2", null, "Invoices"),
+        h("div", { class: "grid" }, formFields(settings, [
+            ["tagline", "Tagline below the logo", "text", { wide: true }],
+            ["number_format", "Number format", "text",
+             { hint: "Placeholders: {code}, {year}, {seq:03}" }],
+            ["due_days", "Default payment term (days)", "number"],
+        ])),
+        h("div", { class: "actions" }, h("button", { class: "primary", onclick: save }, "Save")));
 }
 
 reload().catch(showError);
