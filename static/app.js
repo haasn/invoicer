@@ -74,7 +74,7 @@ function sumByCurrency(docs) {
 
 function clientName(id) {
     const c = S.clients[id];
-    return c ? c.name : id;
+    return c ? c.short_name || c.name : id;
 }
 
 function badge(status) {
@@ -143,7 +143,7 @@ function renderSidebar() {
     for (const c of Object.values(S.clients)) {
         const outstanding = open.filter(i => i.client === c.id);
         const active = (view === "client" && id === c.id);
-        items.push(navItem(`#/client/${encodeURIComponent(c.id)}`, c.name,
+        items.push(navItem(`#/client/${encodeURIComponent(c.id)}`, clientName(c.id),
                            outstanding.length ? sumByCurrency(outstanding) : "",
                            active, c.archived ? "archived" : ""));
     }
@@ -248,7 +248,7 @@ function headActions(client) {
     }
     const clients = Object.values(S.clients).filter(c => !c.archived);
     if (!clients.length) return [];
-    const select = h("select", null, clients.map(c => h("option", { value: c.id }, c.name)));
+    const select = h("select", null, clients.map(c => h("option", { value: c.id }, clientName(c.id))));
     return [select, h("button", { class: "primary", onclick: () => newDraft(select.value) }, "+ New invoice")];
 }
 
@@ -448,7 +448,7 @@ function draftView(id) {
         changed();
     } }, Object.values(S.clients)
         .filter(c => !c.archived || c.id === draft.client)
-        .map(c => h("option", { value: c.id, selected: c.id === draft.client }, c.name)));
+        .map(c => h("option", { value: c.id, selected: c.id === draft.client }, clientName(c.id))));
 
     const itemsBody = h("tbody");
     const renderItems = () => itemsBody.replaceChildren(...draft.items.map(itemRow));
@@ -652,7 +652,8 @@ function clientForm(id) {
 
     const fields = [
         isNew ? ["id", "Identifier (file name, cannot be changed)", "text", { placeholder: "e.g. acme" }] : null,
-        ["name", "Name", "text", { wide: true }],
+        ["name", "Name (as printed on invoices)", "text", { wide: true }],
+        ["short_name", "Short name (optional, shown in this app)", "text", { placeholder: "e.g. SPI Inc" }],
         ["code", "Code (invoice number prefix)", "text", { placeholder: "e.g. ACM" }],
         ["country", "Country (ISO code)", "text", { placeholder: "e.g. FR" }],
         ["address", "Address (one line per row, include the country if abroad)", "lines", { wide: true }],

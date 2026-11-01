@@ -214,7 +214,8 @@ def api_preview(app, body):
 
 def client_label(store, doc):
     try:
-        return store.client(doc.get("client", "")).get("name", doc["client"])
+        client = store.client(doc.get("client", ""))
+        return client.get("short_name") or client.get("name", doc["client"])
     except StoreError:
         return doc.get("client", "?")
 
@@ -258,8 +259,8 @@ def api_reveal(app, _body, inv_id):
 
 
 CLIENT_FIELDS = {
-    "name": str, "code": str, "address": list, "country": str, "vat_id": str,
-    "tax_scheme": str, "tax_note": str, "due_days": int, "currency": str,
+    "name": str, "short_name": str, "code": str, "address": list, "country": str,
+    "vat_id": str, "tax_scheme": str, "tax_note": str, "due_days": int, "currency": str,
     "title": str, "sender_email": str, "rate": str, "rate_unit": str,
     "buyer_reference": str, "archived": bool,
 }

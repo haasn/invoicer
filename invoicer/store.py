@@ -101,7 +101,9 @@ class Store:
         for path, c in self._load_dir("clients/*.json"):
             c["id"] = path.stem
             out[path.stem] = c
-        return dict(sorted(out.items(), key=lambda kv: kv[1].get("name", "").lower()))
+        def display_name(c):
+            return (c.get("short_name") or c.get("name", "")).lower()
+        return dict(sorted(out.items(), key=lambda kv: display_name(kv[1])))
 
     def client(self, client_id):
         path = self.client_path(client_id)
