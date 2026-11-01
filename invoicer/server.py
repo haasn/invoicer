@@ -62,10 +62,11 @@ def annotate(doc, composed=None):
     ann = {"status": model.display_status(doc, dt.date.today())}
     try:
         t = model.totals(composed)
-        ann.update(net=money(t["net"]), vat=money(t["vat"]), gross=money(t["gross"]),
-                   gross_raw=str(t["gross"]))
+        ann.update(net=money(t["net"]), vat=money(t["vat"]), gross=money(t["gross"]))
+        # Exact integer amounts, so the UI can sum without float rounding.
+        ann.update({f"{k}_cents": int(v * 100) for k, v in t.items()})
     except (ValueError, KeyError):
-        ann.update(net="?", vat="?", gross="?", gross_raw="0")
+        ann.update(net="?", vat="?", gross="?", net_cents=0, vat_cents=0, gross_cents=0)
     doc["_"] = ann
     return doc
 

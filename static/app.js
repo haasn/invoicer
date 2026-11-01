@@ -63,13 +63,17 @@ function money(amount, currency) {
     return `${currency || "EUR"} ${typeof amount === "number" ? fmt.format(amount) : amount}`;
 }
 
+function cents(c, currency) {
+    return money(c / 100, currency);
+}
+
 function sumByCurrency(docs) {
     const sums = {};
     for (const d of docs) {
         const cur = d.currency || "EUR";
-        sums[cur] = (sums[cur] || 0) + parseFloat(d._.gross_raw);
+        sums[cur] = (sums[cur] || 0) + d._.gross_cents;
     }
-    return Object.entries(sums).map(([cur, v]) => money(v, cur)).join(", ") || money(0);
+    return Object.entries(sums).map(([cur, v]) => cents(v, cur)).join(", ") || money(0);
 }
 
 function clientName(id) {
