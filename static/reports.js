@@ -154,7 +154,7 @@ function reportFilters(opts = {}) {
     ];
     if (opts.clients) {
         items.push(field("Client", select("client", [["", "All clients"],
-            ...Object.values(S.clients).map(c => [c.id, clientName(c.id)])])));
+            ...clientsByRecent().map(c => [c.id, clientName(c.id)])])));
     }
     items.push(field("Count by", select("basis", Object.entries(BASES).map(([k, [l]]) => [k, l]))));
     if (opts.split) {

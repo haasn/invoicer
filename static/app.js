@@ -84,6 +84,17 @@ function clientName(id) {
     return c ? c.short_name || c.name : id;
 }
 
+// Clients ordered by their most recent invoice (or draft), newest first.
+function clientsByRecent() {
+    const latest = {};
+    for (const d of [...S.invoices, ...S.drafts]) {
+        if (d.issue_date && !(latest[d.client] >= d.issue_date)) latest[d.client] = d.issue_date;
+    }
+    return Object.values(S.clients).sort((a, b) =>
+        (latest[b.id] || "").localeCompare(latest[a.id] || "")
+        || clientName(a.id).localeCompare(clientName(b.id)));
+}
+
 function badge(status) {
     return h("span", { class: `badge ${status}` }, status);
 }
@@ -179,7 +190,7 @@ function renderSidebar() {
         navItem("#/", "All invoices", open.length ? sumByCurrency(open) : "", view === "" || view === undefined),
         h("div", { class: "nav-head" }, "Clients"),
     ];
-    for (const c of Object.values(S.clients)) {
+    for (const c of clientsByRecent()) {
         const outstanding = open.filter(i => i.client === c.id);
         const active = (view === "client" && id === c.id);
         items.push(navItem(`#/client/${encodeURIComponent(c.id)}`, clientName(c.id),
@@ -288,7 +299,7 @@ function headActions(client) {
         return [h("button", { onclick: () => go("edit-client", client.id) }, "Edit client"),
                 h("button", { class: "primary", onclick: () => newDraft(client.id) }, "+ New invoice")];
     }
-    const clients = Object.values(S.clients).filter(c => !c.archived);
+    const clients = clientsByRecent().filter(c => !c.archived);
     if (!clients.length) return [];
     const select = h("select", null, clients.map(c => h("option", { value: c.id }, clientName(c.id))));
     return [select, h("button", { class: "primary", onclick: () => newDraft(select.value) }, "+ New invoice")];
@@ -549,7 +560,7 @@ function draftView(id) {
         draft.client = e.target.value;
         draft.due_date = due.value = addDays(draft.issue_date, dueDays(draft.client));
         changed();
-    } }, Object.values(S.clients)
+    } }, clientsByRecent()
         .filter(c => !c.archived || c.id === draft.client)
         .map(c => h("option", { value: c.id, selected: c.id === draft.client }, clientName(c.id))));
 
