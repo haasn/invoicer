@@ -5,7 +5,7 @@ files as the database, and [Typst](https://typst.app) for PDFs. It needs
 Python 3.11+ (stdlib only), `typst`, and optionally `git` and `gpg`.
 
 ```sh
-bin/invoicer --data ~/sync/invoice        # or set data_dir in ~/.config/invoicer/config.json
+bin/invoicer --data ~/.local/share/invoicer   # or set data_dir in ~/.config/invoicer/config.json
 ```
 
 To keep it running in the background on port 8765, install
@@ -25,7 +25,7 @@ invoices/<year>/<number>.pdf.asc  optional detached GPG signature
 
 ## Using it on several machines
 
-Put the data directory in a folder synced by [Syncthing](https://syncthing.net)
+Make the data directory its own [Syncthing](https://syncthing.net) folder
 (without a `.git` inside). Every file carries a revision stamp, so:
 
 - a tab that is open while the file changes on another machine reloads when it
