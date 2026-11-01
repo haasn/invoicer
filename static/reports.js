@@ -209,7 +209,7 @@ function taxView() {
     const summary = moneyTable(
         [["Period"], ["Invoices", true], [`Net (${currency})`, true], ["VAT", true], ["Gross", true],
          ...schemes.map(k => [`Net: ${schemeLabel(k)}`, true])],
-        [...byPeriod].map(([k, s]) => h("tr", { class: s.count ? null : "zero" },
+        [...byPeriod].reverse().map(([k, s]) => h("tr", { class: s.count ? null : "zero" },
                                          h("td", null, periodLabel(k)), sumCells(s))),
         h("tr", null, h("td", null, "Total"), sumCells(total)));
 
@@ -249,7 +249,7 @@ function euSection(rows, currency) {
     const missing = eu.filter(r => !vatIdOf(r.inv));
 
     const quarters = new Map();
-    for (const r of [...eu].sort((a, b) => a.date.localeCompare(b.date))) {
+    for (const r of [...eu].sort((a, b) => b.date.localeCompare(a.date))) {
         const vatId = vatIdOf(r.inv).replace(/\s+/g, "");
         if (!vatId) continue;
         const q = periodKey(r.date, "quarter");
