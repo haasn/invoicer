@@ -17,8 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import actions, gitsync, model, render
-from .store import RevisionConflict, StoreError
+from . import actions, gitsync, model, render, syncthing
+from .store import HOST, RevisionConflict, StoreError
 
 BASE = Path(__file__).resolve().parent.parent
 STATIC = BASE / "static"
@@ -128,6 +128,12 @@ def api_state(app, _body):
             "tax_schemes": model.TAX_SCHEMES,
         },
     }
+
+
+@route("GET", "/api/sync-check")
+def api_sync_check(app, _body):
+    others = app.store.authors() - {HOST}
+    return {"warnings": syncthing.issue_warnings(app.store.root, others)}
 
 
 @route("GET", r"/api/invoices/([^/]+)/pdf")

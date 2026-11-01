@@ -211,6 +211,12 @@ class Store:
         path.unlink(missing_ok=True)
         return path
 
+    def authors(self):
+        """Host names of all machines that have written documents here."""
+        docs = self.invoices() + self.drafts() + list(self.clients().values())
+        return {d["revision"]["host"] for d in docs if isinstance(d.get("revision"), dict)
+                and d["revision"].get("host")}
+
     # Numbering
 
     def next_seq(self, client_id):

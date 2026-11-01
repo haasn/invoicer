@@ -665,6 +665,8 @@ async function issueDraft(e) {
         const client = clientName(e.draft.client);
         const cur = (S.clients[e.draft.client] || {}).currency || "EUR";
         let msg = `Issue invoice ${saved._.next_number} to ${client} over ${money(saved._.gross, cur)}?`;
+        const { warnings } = await api("GET", "/api/sync-check");
+        if (warnings.length) msg += "\n\nWarning: " + warnings.join("\nWarning: ");
         if (e.draft.issue_date !== S.today) msg += `\n\nNote: the invoice date is ${e.draft.issue_date}, not today.`;
         if (!confirm(msg)) return;
         e.dirty = false;
