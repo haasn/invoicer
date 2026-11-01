@@ -8,6 +8,10 @@ Python 3.11+ (stdlib only), `typst`, and optionally `git` and `gpg`.
 bin/invoicer --data ~/dev/invoice-data        # or set data_dir in ~/.config/invoicer/config.json
 ```
 
+To keep it running in the background on port 8765, install
+`contrib/invoicer.service` as a systemd user service (see the comment inside)
+and bookmark http://127.0.0.1:8765/.
+
 ## Data directory
 
 ```
