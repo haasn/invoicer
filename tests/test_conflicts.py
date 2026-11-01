@@ -42,6 +42,12 @@ class ConflictTest(unittest.TestCase):
         self.assertEqual(len(self.store.invoices()), 1)
         self.assertIn("A-1.json", self.store.problems()[0])
 
+    def test_versions_untouched(self):
+        versioned = self.write(f".stversions/drafts/d1{COPY}~20261101-130000.json", {})
+        self.assertEqual(self.store.resolve_conflicts(), [])
+        self.assertEqual(self.store.problems(), [])
+        self.assertTrue(versioned.exists())
+
     def test_restore_missing_original(self):
         self.write(f"clients/a{COPY}.json", {"name": "A"})
         self.store.resolve_conflicts()

@@ -103,6 +103,13 @@ class Store:
         if (current.get("revision") or {}).get("id") != base:
             raise RevisionConflict(path, current)
 
+    def _walk(self, pattern):
+        """Recursive glob that skips hidden directories, e.g. Syncthing's
+        .stversions (old versions must stay untouched) and .git."""
+        for path in self.root.rglob(pattern):
+            if not any(p.startswith(".") for p in path.relative_to(self.root).parts[:-1]):
+                yield path
+
     def _load_dir(self, pattern):
         out = []
         for path in sorted(self.root.glob(pattern)):
@@ -251,7 +258,7 @@ class Store:
         same number was issued twice, which needs a human.
         """
         notes = []
-        for path in sorted(self.root.rglob("*.sync-conflict-*")):
+        for path in sorted(self._walk("*.sync-conflict-*")):
             m = SYNC_CONFLICT_RE.match(path.name)
             if not m or not path.is_file():
                 continue
@@ -279,8 +286,8 @@ class Store:
                 out.append(f"Duplicate invoice number {key[1]} "
                            f"({seen[key]} and {d['id']})")
             seen.setdefault(key, d["id"])
-        for path in self.root.rglob("*"):
-            if ".git" in path.parts or not CONFLICT_RE.search(path.name):
+        for path in self._walk("*"):
+            if not CONFLICT_RE.search(path.name):
                 continue
             rel = path.relative_to(self.root)
             m = SYNC_CONFLICT_RE.match(path.name)
